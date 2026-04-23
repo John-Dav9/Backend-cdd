@@ -52,6 +52,11 @@ if (!entry) {
   for (const candidate of candidates) {
     console.error(`- ${candidate}`);
   }
+  const distDir = path.join(ROOT, 'dist');
+  console.error('Files inside dist (recursive):');
+  for (const file of walk(distDir).sort()) {
+    console.error(`- ${file}`);
+  }
   console.error('Top-level entries:');
   try {
     for (const name of fs.readdirSync(ROOT)) {
