@@ -10,9 +10,9 @@
   },
   "scripts": {
     "build": "nest build",
-    "start": "node dist/main.js",
+    "start": "node start-prod.js",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main.js",
+    "start:prod": "node start-prod.js",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
