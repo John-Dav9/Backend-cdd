@@ -9,7 +9,7 @@ export class ContactController {
   constructor(private readonly service: ContactService) {}
 
   @Public()
-  @Throttle(3, 60)
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @Post()
   send(@Body() dto: CreateContactDto) {
     return this.service.send(dto);

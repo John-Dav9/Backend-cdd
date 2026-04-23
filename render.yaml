@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: cmciea-backend
+    runtime: node
+    plan: starter
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        value: https://cmciea-france.com
+      - key: FRONTEND_URLS
+        value: https://cmciea-france.com,https://www.cmciea-france.com,https://cmcieafrance-cdd.web.app
+      - key: DEV_ADMIN_ENABLED
+        value: "false"
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: MAIL_ADMIN
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false

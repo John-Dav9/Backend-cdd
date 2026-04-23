@@ -9,7 +9,7 @@ export class InscriptionsController {
   constructor(private readonly service: InscriptionsService) {}
 
   @Public()
-  @Throttle(5, 60)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post()
   create(@Body() dto: CreateInscriptionDto) {
     return this.service.create(dto);

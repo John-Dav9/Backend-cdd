@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { BibliothequeModule } from './bibliotheque/bibliotheque.module';
 import { ContactModule } from './contact/contact.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { HealthModule } from './health/health.module';
 import { InscriptionsModule } from './inscriptions/inscriptions.module';
 import { MailModule } from './mail/mail.module';
 import { MarathonModule } from './marathon/marathon.module';
@@ -29,6 +30,7 @@ import { SettingsModule } from './settings/settings.module';
     ]),
     ScheduleModule.forRoot(),
     FirebaseModule,
+    HealthModule,
     AuthModule,
     MailModule,
     InscriptionsModule,

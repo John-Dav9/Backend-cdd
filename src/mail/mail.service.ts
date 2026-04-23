@@ -7,9 +7,13 @@ import { CreateInscriptionDto, InscriptionType } from '../inscriptions/dto/creat
 export class MailService {
   private resend: Resend | null = null;
   private readonly logger = new Logger(MailService.name);
+  private readonly fromAddress: string | null;
+  private readonly adminAddress: string | null;
 
   constructor(private config: ConfigService) {
     const resendApiKey = this.config.get<string>('RESEND_API_KEY');
+    this.fromAddress = this.config.get<string>('MAIL_FROM')?.trim() || null;
+    this.adminAddress = this.config.get<string>('MAIL_ADMIN')?.trim() || null;
 
     if (!resendApiKey) {
       this.logger.warn(
@@ -21,9 +25,27 @@ export class MailService {
     this.resend = new Resend(resendApiKey);
   }
 
-  private isMailConfigured(): boolean {
+  get isConfigured(): boolean {
+    return !!this.resend && !!this.fromAddress;
+  }
+
+  get isAdminInboxConfigured(): boolean {
+    return this.isConfigured && !!this.adminAddress;
+  }
+
+  private canSendMail(requireAdminInbox = false): boolean {
     if (!this.resend) {
       this.logger.warn('Email skipped: mail provider is not configured.');
+      return false;
+    }
+
+    if (!this.fromAddress) {
+      this.logger.warn('Email skipped: MAIL_FROM is missing.');
+      return false;
+    }
+
+    if (requireAdminInbox && !this.adminAddress) {
+      this.logger.warn('Email skipped: MAIL_ADMIN is missing.');
       return false;
     }
 
@@ -31,15 +53,15 @@ export class MailService {
   }
 
   private get from(): string {
-    return this.config.get('MAIL_FROM');
+    return this.fromAddress!;
   }
 
   private get admin(): string {
-    return this.config.get('MAIL_ADMIN');
+    return this.adminAddress!;
   }
 
   async sendConfirmationInscription(dto: CreateInscriptionDto) {
-    if (!this.isMailConfigured()) return;
+    if (!this.canSendMail()) return;
 
     const labels: Record<InscriptionType, string> = {
       [InscriptionType.MARATHON]: 'Marathon Biblique',
@@ -73,7 +95,7 @@ export class MailService {
   }
 
   async sendContact(nom: string, email: string, message: string) {
-    if (!this.isMailConfigured()) return;
+    if (!this.canSendMail(true)) return;
 
     await this.resend!.emails.send({
       from: this.from,
@@ -93,7 +115,7 @@ export class MailService {
   // ─── Marathon emails ───────────────────────────────────────────────────────
 
   async sendBienvenueMarathon(to: string, fullName: string, marathon: any) {
-    if (!this.isMailConfigured()) return;
+    if (!this.canSendMail()) return;
 
     const prenom = fullName.split(' ')[0];
     await this.resend!.emails.send({
@@ -122,7 +144,7 @@ export class MailService {
   }
 
   async sendEncouragementMarathon(to: string, fullName: string, marathon: any, percent: number) {
-    if (!this.isMailConfigured()) return;
+    if (!this.canSendMail()) return;
 
     const prenom = fullName.split(' ')[0];
     const messages: Record<number, string> = {
@@ -146,7 +168,7 @@ export class MailService {
   }
 
   async sendAttestationMarathon(to: string, fullName: string, marathon: any) {
-    if (!this.isMailConfigured()) return;
+    if (!this.canSendMail()) return;
 
     const prenom = fullName.split(' ')[0];
     await this.resend!.emails.send({
@@ -174,7 +196,7 @@ export class MailService {
   }
 
   async sendAttestationAnnuelle(to: string, fullName: string, annee: number, nbMarathons: number) {
-    if (!this.isMailConfigured()) return;
+    if (!this.canSendMail()) return;
 
     const prenom = fullName.split(' ')[0];
     await this.resend!.emails.send({
@@ -204,7 +226,7 @@ export class MailService {
   }
 
   async sendAnnonce(destinataires: string[], sujet: string, contenu: string) {
-    if (!this.isMailConfigured()) return;
+    if (!this.canSendMail()) return;
 
     for (const to of destinataires) {
       await this.resend!.emails.send({

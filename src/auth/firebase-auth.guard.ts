@@ -23,16 +23,19 @@ export class FirebaseAuthGuard implements CanActivate {
       ?.split(',')[0]
       ?.trim();
 
-    const candidates = [
-      forwarded,
+    const candidates = forwarded
+      ? [forwarded]
+      : [
       request.ip,
       request.socket?.remoteAddress,
       request.connection?.remoteAddress,
-    ]
+    ];
+
+    const normalized = candidates
       .filter(Boolean)
       .map((v) => String(v).toLowerCase());
 
-    return candidates.some(
+    return normalized.some(
       (ip) =>
         ip === '127.0.0.1' ||
         ip === '::1' ||

@@ -9,7 +9,7 @@ export class TemoignagesController {
   constructor(private readonly service: TemoignagesService) {}
 
   @Public()
-  @Throttle(4, 60)
+  @Throttle({ default: { limit: 4, ttl: 60000 } })
   @Post()
   create(@Body() dto: CreateTemoignageDto) {
     return this.service.create(dto);

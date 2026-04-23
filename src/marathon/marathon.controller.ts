@@ -64,21 +64,21 @@ export class MarathonController {
   }
 
   @Public()
-  @Throttle(5, 60)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post(':id/inscrire')
   inscrire(@Param('id') id: string, @Body() dto: InscrireMarathonDto) {
     return this.service.inscrire(id, dto);
   }
 
   @Public()
-  @Throttle(20, 60)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post(':id/progression')
   mettreAJourProgression(@Param('id') id: string, @Body() dto: UpdateProgressionDto) {
     return this.service.mettreAJourProgression(id, dto);
   }
 
   @Public()
-  @Throttle(30, 60)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Get(':id/progression')
   getProgression(@Param('id') id: string, @Query('email') email: string) {
     return this.service.getProgression(id, email);
