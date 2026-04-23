@@ -1,0 +1,81 @@
+export interface BibleBook {
+  id: string;
+  nom: string;
+  testament: 'AT' | 'NT';
+  chapitres: number;
+}
+
+export const BIBLE_BOOKS: BibleBook[] = [
+  // Ancien Testament (929 chapitres)
+  { id: 'GEN', nom: 'Gen\u00e8se',                  testament: 'AT', chapitres: 50  },
+  { id: 'EXO', nom: 'Exode',                         testament: 'AT', chapitres: 40  },
+  { id: 'LEV', nom: 'L\u00e9vitique',                testament: 'AT', chapitres: 27  },
+  { id: 'NOM', nom: 'Nombres',                        testament: 'AT', chapitres: 36  },
+  { id: 'DEU', nom: 'Deut\u00e9ronome',              testament: 'AT', chapitres: 34  },
+  { id: 'JOS', nom: 'Josu\u00e9',                    testament: 'AT', chapitres: 24  },
+  { id: 'JUG', nom: 'Juges',                          testament: 'AT', chapitres: 21  },
+  { id: 'RUT', nom: 'Ruth',                           testament: 'AT', chapitres: 4   },
+  { id: '1SA', nom: '1 Samuel',                       testament: 'AT', chapitres: 31  },
+  { id: '2SA', nom: '2 Samuel',                       testament: 'AT', chapitres: 24  },
+  { id: '1RO', nom: '1 Rois',                         testament: 'AT', chapitres: 22  },
+  { id: '2RO', nom: '2 Rois',                         testament: 'AT', chapitres: 25  },
+  { id: '1CH', nom: '1 Chroniques',                   testament: 'AT', chapitres: 29  },
+  { id: '2CH', nom: '2 Chroniques',                   testament: 'AT', chapitres: 36  },
+  { id: 'ESD', nom: 'Esdras',                         testament: 'AT', chapitres: 10  },
+  { id: 'NEH', nom: 'N\u00e9h\u00e9mie',             testament: 'AT', chapitres: 13  },
+  { id: 'EST', nom: 'Esther',                         testament: 'AT', chapitres: 10  },
+  { id: 'JOB', nom: 'Job',                            testament: 'AT', chapitres: 42  },
+  { id: 'PSA', nom: 'Psaumes',                        testament: 'AT', chapitres: 150 },
+  { id: 'PRO', nom: 'Proverbes',                      testament: 'AT', chapitres: 31  },
+  { id: 'ECC', nom: 'Eccl\u00e9siaste',              testament: 'AT', chapitres: 12  },
+  { id: 'CAN', nom: 'Cantique des Cantiques',         testament: 'AT', chapitres: 8   },
+  { id: 'ESA', nom: '\u00c9sa\u00efe',               testament: 'AT', chapitres: 66  },
+  { id: 'JER', nom: 'J\u00e9r\u00e9mie',            testament: 'AT', chapitres: 52  },
+  { id: 'LAM', nom: 'Lamentations',                   testament: 'AT', chapitres: 5   },
+  { id: 'EZE', nom: '\u00c9z\u00e9chiel',            testament: 'AT', chapitres: 48  },
+  { id: 'DAN', nom: 'Daniel',                         testament: 'AT', chapitres: 12  },
+  { id: 'OSE', nom: 'Os\u00e9e',                     testament: 'AT', chapitres: 14  },
+  { id: 'JOE', nom: 'Jo\u00ebl',                     testament: 'AT', chapitres: 3   },
+  { id: 'AMO', nom: 'Amos',                           testament: 'AT', chapitres: 9   },
+  { id: 'ABD', nom: 'Abdias',                         testament: 'AT', chapitres: 1   },
+  { id: 'JON', nom: 'Jonas',                          testament: 'AT', chapitres: 4   },
+  { id: 'MIC', nom: 'Mich\u00e9e',                   testament: 'AT', chapitres: 7   },
+  { id: 'NAH', nom: 'Nahum',                          testament: 'AT', chapitres: 3   },
+  { id: 'HAB', nom: 'Habacuc',                        testament: 'AT', chapitres: 3   },
+  { id: 'SOF', nom: 'Sophonie',                       testament: 'AT', chapitres: 3   },
+  { id: 'AGG', nom: 'Agg\u00e9e',                    testament: 'AT', chapitres: 2   },
+  { id: 'ZAC', nom: 'Zacharie',                       testament: 'AT', chapitres: 14  },
+  { id: 'MAL', nom: 'Malachie',                       testament: 'AT', chapitres: 4   },
+  // Nouveau Testament (260 chapitres)
+  { id: 'MAT', nom: 'Matthieu',                       testament: 'NT', chapitres: 28  },
+  { id: 'MAR', nom: 'Marc',                           testament: 'NT', chapitres: 16  },
+  { id: 'LUC', nom: 'Luc',                            testament: 'NT', chapitres: 24  },
+  { id: 'JEA', nom: 'Jean',                           testament: 'NT', chapitres: 21  },
+  { id: 'ACT', nom: 'Actes',                          testament: 'NT', chapitres: 28  },
+  { id: 'ROM', nom: 'Romains',                        testament: 'NT', chapitres: 16  },
+  { id: '1CO', nom: '1 Corinthiens',                  testament: 'NT', chapitres: 16  },
+  { id: '2CO', nom: '2 Corinthiens',                  testament: 'NT', chapitres: 13  },
+  { id: 'GAL', nom: 'Galates',                        testament: 'NT', chapitres: 6   },
+  { id: 'EPH', nom: '\u00c9ph\u00e9siens',           testament: 'NT', chapitres: 6   },
+  { id: 'PHP', nom: 'Philippiens',                    testament: 'NT', chapitres: 4   },
+  { id: 'COL', nom: 'Colossiens',                     testament: 'NT', chapitres: 4   },
+  { id: '1TH', nom: '1 Thessaloniciens',              testament: 'NT', chapitres: 5   },
+  { id: '2TH', nom: '2 Thessaloniciens',              testament: 'NT', chapitres: 3   },
+  { id: '1TI', nom: '1 Timoth\u00e9e',               testament: 'NT', chapitres: 6   },
+  { id: '2TI', nom: '2 Timoth\u00e9e',               testament: 'NT', chapitres: 4   },
+  { id: 'TIT', nom: 'Tite',                           testament: 'NT', chapitres: 3   },
+  { id: 'PHM', nom: 'Phil\u00e9mon',                 testament: 'NT', chapitres: 1   },
+  { id: 'HEB', nom: 'H\u00e9breux',                  testament: 'NT', chapitres: 13  },
+  { id: 'JAC', nom: 'Jacques',                        testament: 'NT', chapitres: 5   },
+  { id: '1PI', nom: '1 Pierre',                       testament: 'NT', chapitres: 5   },
+  { id: '2PI', nom: '2 Pierre',                       testament: 'NT', chapitres: 3   },
+  { id: '1JE', nom: '1 Jean',                         testament: 'NT', chapitres: 5   },
+  { id: '2JE', nom: '2 Jean',                         testament: 'NT', chapitres: 1   },
+  { id: '3JE', nom: '3 Jean',                         testament: 'NT', chapitres: 1   },
+  { id: 'JUD', nom: 'Jude',                           testament: 'NT', chapitres: 1   },
+  { id: 'APO', nom: 'Apocalypse',                     testament: 'NT', chapitres: 22  },
+];
+
+export const AT_BOOKS = BIBLE_BOOKS.filter(b => b.testament === 'AT');
+export const NT_BOOKS = BIBLE_BOOKS.filter(b => b.testament === 'NT');
+export const BIBLE_BOOK_MAP = new Map(BIBLE_BOOKS.map(b => [b.id, b]));
