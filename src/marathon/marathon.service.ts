@@ -73,7 +73,7 @@ export class MarathonService {
   async findAll(adminMode = false) {
     this.assertReady();
     let query: FirebaseFirestore.Query = this.firebase.firestore.collection(this.col);
-    if (!adminMode) query = query.where('statut', '==', MarathonStatut.ACTIF);
+    if (!adminMode) query = query.where('statut', 'in', [MarathonStatut.PLANIFIE, MarathonStatut.ACTIF]);
     query = query.orderBy('dateDebut', 'desc');
 
     const snap = await query.get();
@@ -100,6 +100,25 @@ export class MarathonService {
       statut: MarathonStatut.ACTIF,
     });
     return { success: true };
+  }
+
+  async findOrphaned() {
+    this.assertReady();
+    const inscSnap = await this.firebase.firestore.collection(this.inscCol).get();
+    const marathonIds = [...new Set(inscSnap.docs.map(d => d.data()['marathonId'] as string))];
+
+    const docs = await Promise.all(
+      marathonIds.map(id => this.firebase.firestore.collection(this.col).doc(id).get()),
+    );
+
+    const orphaned: any[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      if (!docs[i].exists) {
+        const count = inscSnap.docs.filter(d => d.data()['marathonId'] === marathonIds[i]).length;
+        orphaned.push({ id: marathonIds[i], titre: 'Marathon supprimé', statut: 'SUPPRIME', nbInscrits: count });
+      }
+    }
+    return orphaned;
   }
 
   async supprimer(id: string) {

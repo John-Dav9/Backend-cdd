@@ -24,6 +24,11 @@ export class MarathonController {
     return this.service.findAll(true);
   }
 
+  @Get('admin/orphaned')
+  findOrphaned() {
+    return this.service.findOrphaned();
+  }
+
   @Get(':id/inscrits')
   getInscrits(@Param('id') id: string) {
     return this.service.getInscrits(id);

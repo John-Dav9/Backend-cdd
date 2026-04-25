@@ -43,7 +43,24 @@ export class UserService {
     const entries = await Promise.all(
       inscriptions.map(async (insc) => {
         const marathon = marathonMap.get(insc.marathonId);
-        if (!marathon) return null;
+        if (!marathon) {
+          const daysRead = Object.values(insc.progress ?? {}).filter(Boolean).length;
+          return {
+            marathonId:        insc.marathonId,
+            titre:             'Marathon biblique (archivé)',
+            statut:            'ARCHIVE',
+            scope:             null,
+            dateDebut:         null,
+            dateFin:           null,
+            nbJours:           null,
+            progressPercent:   insc.progressPercent ?? 0,
+            milestonesReached: insc.milestonesReached ?? [],
+            rank:              null,
+            totalParticipants: null,
+            daysRead,
+            inscritLe:         insc.createdAt,
+          };
+        }
 
         let rank: number | null = null;
         let totalParticipants = marathon.nbInscrits ?? 0;
