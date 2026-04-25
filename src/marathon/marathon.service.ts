@@ -73,11 +73,19 @@ export class MarathonService {
   async findAll(adminMode = false) {
     this.assertReady();
     let query: FirebaseFirestore.Query = this.firebase.firestore.collection(this.col);
-    if (!adminMode) query = query.where('statut', 'in', [MarathonStatut.PLANIFIE, MarathonStatut.ACTIF]);
-    query = query.orderBy('dateDebut', 'desc');
 
+    if (adminMode) {
+      query = query.orderBy('dateDebut', 'desc');
+      const snap = await query.get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    // Public : filtre en mémoire pour éviter un index composite Firestore
+    query = query.where('statut', 'in', [MarathonStatut.PLANIFIE, MarathonStatut.ACTIF]);
     const snap = await query.get();
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+    docs.sort((a, b) => (a.dateDebut > b.dateDebut ? -1 : 1));
+    return docs;
   }
 
   async findOne(id: string) {
