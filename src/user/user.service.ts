@@ -20,15 +20,21 @@ export class UserService {
     const lowerEmail = email.trim().toLowerCase();
 
     // 1. Toutes les inscriptions de l'utilisateur
+    // Tri en m\u00e9moire pour \u00e9viter l'index composite Firestore (email + createdAt)
     const inscSnap = await this.firebase.firestore
       .collection('marathon_inscriptions')
       .where('email', '==', lowerEmail)
-      .orderBy('createdAt', 'desc')
       .get();
 
     if (inscSnap.empty) throw new NotFoundException('Aucune inscription trouv\u00e9e pour cet email.');
 
-    const inscriptions = inscSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    const inscriptions = inscSnap.docs
+      .map(d => ({ id: d.id, ...d.data() } as any))
+      .sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() ?? 0;
+        const tb = b.createdAt?.toMillis?.() ?? 0;
+        return tb - ta;
+      });
 
     // 2. Charger les marathons associés
     const marathonIds = [...new Set(inscriptions.map(i => i.marathonId as string))];
