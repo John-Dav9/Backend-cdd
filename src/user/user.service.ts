@@ -75,9 +75,11 @@ export class UserService {
           const allInsc = await this.firebase.firestore
             .collection('marathon_inscriptions')
             .where('marathonId', '==', marathon.id)
-            .orderBy('progressPercent', 'desc')
             .get();
-          rank = allInsc.docs.findIndex(d => d.data()['email'] === lowerEmail) + 1;
+          const sorted = allInsc.docs
+            .map(d => d.data())
+            .sort((a, b) => (b['progressPercent'] ?? 0) - (a['progressPercent'] ?? 0));
+          rank = sorted.findIndex(d => d['email'] === lowerEmail) + 1;
           totalParticipants = allInsc.size;
         }
 

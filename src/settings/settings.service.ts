@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
 
 const THEME_DOC = 'settings/theme';
-const PAGE_DOC = (id: string) => `settings/pages/${id}`;
+const PAGE_DOC = (id: string) => `settings/page_${id}`;
+
+type UploadedFile = {
+  originalname: string;
+  mimetype: string;
+  buffer: Buffer;
+};
 
 export const DEFAULT_CULTES = [
   { id: '1', jour: 'DU LUNDI AU VENDREDI', heure: '12H30 \u2013 13H30', description: 'PRI\u00c8RE EN LIGNE' },
@@ -44,7 +50,7 @@ export class SettingsService {
     return this.getTheme();
   }
 
-  async uploadThemeImage(field: 'logoUrl' | 'heroImageUrl', file: Express.Multer.File) {
+  async uploadThemeImage(field: 'logoUrl' | 'heroImageUrl', file: UploadedFile) {
     const bucket = this.firebase.storage.bucket();
     const path = `settings/${field}_${Date.now()}_${file.originalname}`;
     const ref = bucket.file(path);
@@ -81,7 +87,7 @@ export class SettingsService {
     return this.getPage(pageId);
   }
 
-  async uploadPageImage(pageId: string, field: string, file: Express.Multer.File) {
+  async uploadPageImage(pageId: string, field: string, file: UploadedFile) {
     const bucket = this.firebase.storage.bucket();
     const path = `pages/${pageId}/${field}_${Date.now()}_${file.originalname}`;
     const ref = bucket.file(path);

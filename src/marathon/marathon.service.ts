@@ -264,14 +264,16 @@ export class MarathonService {
 
     const data = snap.docs[0].data();
 
-    // Calcul du rang parmi tous les participants
+    // Calcul du rang — tri en mémoire pour éviter l'index composite Firestore
     const allSnap = await this.firebase.firestore
       .collection(this.inscCol)
       .where('marathonId', '==', marathonId)
-      .orderBy('progressPercent', 'desc')
       .get();
 
-    const rank = allSnap.docs.findIndex(d => d.data().email === email.toLowerCase()) + 1;
+    const sorted = allSnap.docs
+      .map(d => d.data())
+      .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0));
+    const rank = sorted.findIndex(d => d['email'] === email.toLowerCase()) + 1;
     const totalParticipants = allSnap.size;
 
     return {
@@ -288,18 +290,20 @@ export class MarathonService {
     const snap = await this.firebase.firestore
       .collection(this.inscCol)
       .where('marathonId', '==', marathonId)
-      .orderBy('progressPercent', 'desc')
       .get();
 
-    return snap.docs.map((d, i) => ({
-      id: d.id,
-      rank: i + 1,
-      fullName: d.data().fullName,
-      email: d.data().email,
-      progressPercent: d.data().progressPercent,
-      milestonesReached: d.data().milestonesReached,
-      createdAt: d.data().createdAt,
-    }));
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as any))
+      .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0))
+      .map((d, i) => ({
+        id: d.id,
+        rank: i + 1,
+        fullName: d.fullName,
+        email: d.email,
+        progressPercent: d.progressPercent,
+        milestonesReached: d.milestonesReached,
+        createdAt: d.createdAt,
+      }));
   }
 
   // ─── Attestation annuelle (déclenchée par l'admin) ────────────────────────
