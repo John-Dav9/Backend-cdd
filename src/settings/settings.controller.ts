@@ -32,7 +32,7 @@ export class SettingsController {
   @UseInterceptors(FileInterceptor('file'))
   uploadThemeImage(
     @Param('field') field: 'logoUrl' | 'heroImageUrl',
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: any,
   ) {
     return this.service.uploadThemeImage(field, file);
   }
@@ -47,6 +47,29 @@ export class SettingsController {
   @Patch('cultes')
   updateCultes(@Body('items') items: any[]) {
     return this.service.updateCultes(items);
+  }
+
+  // ── Prochain culte présentiel ──────────────────────
+  @Public()
+  @Get('next-culte')
+  getNextCulte() {
+    return this.service.getNextCulte();
+  }
+
+  @Patch('next-culte')
+  updateNextCulte(@Body() data: { sujet: string; date: string; message: string }) {
+    return this.service.updateNextCulte(data);
+  }
+
+  @Post('next-culte/flyer')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadNextCulteFlyer(@UploadedFile() file: any) {
+    return this.service.uploadNextCulteFlyer(file);
+  }
+
+  @Post('next-culte/broadcast')
+  broadcastNextCulte() {
+    return this.service.broadcastNextCulte();
   }
 
   // ── Pages (public read, admin write) ──────────────────
@@ -66,7 +89,7 @@ export class SettingsController {
   uploadPageImage(
     @Param('pageId') pageId: string,
     @Param('field') field: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: any,
   ) {
     return this.service.uploadPageImage(pageId, field, file);
   }

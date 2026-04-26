@@ -216,38 +216,59 @@ export class MarathonService {
 
     if (snap.empty) throw new NotFoundException('Inscription introuvable.');
 
-    const inscRef  = snap.docs[0].ref;
-    const inscData = snap.docs[0].data();
-    const progress: Record<string, boolean> = { ...(inscData.progress ?? {}) };
+    const inscRef      = snap.docs[0].ref;
+    const originalData = snap.docs[0].data();
 
-    progress[String(dto.day)] = dto.checked;
+    let resultPercent    = 0;
+    let resultMilestones: number[] = [];
+    let newMilestones:    number[] = [];
 
-    const totalDays = (marathon as any).nbJours as number;
-    const doneCount = Object.values(progress).filter(Boolean).length;
-    const percent   = totalDays > 0 ? Math.round((doneCount / totalDays) * 100) : 0;
+    // Transaction atomique : évite les conditions de course sur les checkboxes rapides
+    await this.firebase.firestore.runTransaction(async (t) => {
+      const inscDoc = await t.get(inscRef);
+      const inscData = inscDoc.data()!;
+      const progress: Record<string, boolean> = { ...(inscData.progress ?? {}) };
 
-    const milestonesReached: number[] = [...(inscData.milestonesReached ?? [])];
-    const newMilestones = MILESTONES.filter(
-      m => percent >= m && !milestonesReached.includes(m),
-    );
-    milestonesReached.push(...newMilestones);
+      progress[String(dto.day)] = dto.checked;
 
-    await inscRef.update({ progress, progressPercent: percent, milestonesReached });
+      const totalDays = (marathon as any).nbJours as number;
+      const doneCount = Object.values(progress).filter(Boolean).length;
+      resultPercent   = totalDays > 0 ? Math.round((doneCount / totalDays) * 100) : 0;
 
-    // Envoyer emails de milestone
+      resultMilestones = [...(inscData.milestonesReached ?? [])];
+      newMilestones    = MILESTONES.filter(
+        m => resultPercent >= m && !resultMilestones.includes(m),
+      );
+      resultMilestones.push(...newMilestones);
+
+      t.update(inscRef, { progress, progressPercent: resultPercent, milestonesReached: resultMilestones });
+    });
+
+    // Envoi des emails hors transaction (les opérations async ne sont pas autorisées dedans)
     for (const milestone of newMilestones) {
       if (milestone < 100) {
         await this.mail
-          .sendEncouragementMarathon(dto.email, inscData.fullName, marathon, milestone)
+          .sendEncouragementMarathon(dto.email, originalData.fullName, marathon, milestone)
           .catch(err => this.logger.error('Mail encouragement marathon', err));
       } else {
+        // Calculer le rang final pour l'attestation
+        const allSnap = await this.firebase.firestore
+          .collection(this.inscCol)
+          .where('marathonId', '==', marathonId)
+          .get();
+        const sorted = allSnap.docs
+          .map(d => d.data())
+          .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0));
+        const rank             = sorted.findIndex(d => d['email'] === dto.email.toLowerCase()) + 1;
+        const totalParticipants = allSnap.size;
+
         await this.mail
-          .sendAttestationMarathon(dto.email, inscData.fullName, marathon)
+          .sendAttestationMarathon(dto.email, originalData.fullName, marathon, rank, totalParticipants)
           .catch(err => this.logger.error('Mail attestation marathon', err));
       }
     }
 
-    return { percent, milestonesReached };
+    return { percent: resultPercent, milestonesReached: resultMilestones };
   }
 
   async getProgression(marathonId: string, email: string) {
