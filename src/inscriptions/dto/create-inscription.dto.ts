@@ -1,9 +1,10 @@
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export enum InscriptionType {
-  MARATHON = 'MARATHON',
-  CULTE = 'CULTE',
+  MARATHON        = 'MARATHON',
+  CULTE           = 'CULTE',
   LECTURE_BIBLIQUE = 'LECTURE_BIBLIQUE',
+  DEPARTEMENT     = 'DEPARTEMENT',
 }
 
 export class CreateInscriptionDto {
@@ -34,4 +35,25 @@ export class CreateInscriptionDto {
   @IsOptional()
   @IsString()
   pseudoTelegram?: string;
+
+  // Pour DEPARTEMENT
+  @IsOptional()
+  @IsString()
+  departement?: string;
+
+  @IsOptional()
+  @IsString()
+  enfantPrenom?: string;
+
+  @IsOptional()
+  @IsString()
+  enfantAge?: string;
+
+  @IsOptional()
+  @IsString()
+  universite?: string;
+
+  @IsOptional()
+  @IsString()
+  typeVoix?: string;
 }

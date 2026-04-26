@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -11,10 +12,14 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/public.decorator';
 import { SettingsService } from './settings.service';
+import { MailService } from '../mail/mail.service';
 
 @Controller('settings')
 export class SettingsController {
-  constructor(private readonly service: SettingsService) {}
+  constructor(
+    private readonly service: SettingsService,
+    private readonly mail: MailService,
+  ) {}
 
   // ── Theme (public read, admin write) ──────────────────
   @Public()
@@ -70,6 +75,30 @@ export class SettingsController {
   @Post('next-culte/broadcast')
   broadcastNextCulte() {
     return this.service.broadcastNextCulte();
+  }
+
+  // ── Email templates (admin only) ──────────────────────
+  @Get('email-templates')
+  listEmailTemplates() {
+    return this.mail.listTemplates();
+  }
+
+  @Get('email-templates/:key')
+  getEmailTemplate(@Param('key') key: string) {
+    return this.mail.getTemplateForAdmin(key);
+  }
+
+  @Patch('email-templates/:key')
+  saveEmailTemplate(
+    @Param('key') key: string,
+    @Body() body: { subject: string; body: string },
+  ) {
+    return this.mail.saveTemplate(key, body.subject, body.body);
+  }
+
+  @Delete('email-templates/:key')
+  resetEmailTemplate(@Param('key') key: string) {
+    return this.mail.resetTemplate(key);
   }
 
   // ── Pages (public read, admin write) ──────────────────
