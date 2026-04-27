@@ -95,6 +95,24 @@ export class SettingsService {
 
   async updateNextCulte(data: { sujet: string; date: string; message: string }) {
     await this.firebase.firestore.doc(NEXT_CULTE_DOC).set(data, { merge: true });
+
+    // Auto-create an actualité for the culte announcement
+    await this.firebase.firestore.collection('actualites').add({
+      titre: `Prochain culte en présentiel : ${data.sujet}`,
+      contenu: `${data.message}\n\nDate : ${data.date}`,
+      auteur: 'Administration',
+      publiee: true,
+      tags: ['culte', 'présentiel'],
+      imageUrl: null,
+      videoId: null,
+      createdAt: new Date().toISOString(),
+    });
+
+    // Auto-broadcast to all registered emails (fire-and-forget)
+    this.broadcastNextCulte().catch(err =>
+      this.logger.error('Auto-broadcast culte failed', err),
+    );
+
     return this.getNextCulte();
   }
 

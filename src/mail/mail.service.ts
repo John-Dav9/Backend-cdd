@@ -26,6 +26,9 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly fromAddress: string | null;
   private readonly adminAddress: string | null;
+  private readonly fromMarathonAddress: string | null;
+  private readonly fromNewsAddress: string | null;
+  private readonly replyToAddress: string | null;
 
   constructor(
     private config: ConfigService,
@@ -34,6 +37,9 @@ export class MailService {
     const resendApiKey = this.config.get<string>('RESEND_API_KEY');
     this.fromAddress = this.config.get<string>('MAIL_FROM')?.trim() || null;
     this.adminAddress = this.config.get<string>('MAIL_ADMIN')?.trim() || null;
+    this.fromMarathonAddress = this.config.get<string>('MAIL_FROM_MARATHON')?.trim() || null;
+    this.fromNewsAddress = this.config.get<string>('MAIL_FROM_NEWS')?.trim() || null;
+    this.replyToAddress = this.config.get<string>('MAIL_REPLY_TO')?.trim() || null;
 
     if (!resendApiKey) {
       this.logger.warn(
@@ -71,6 +77,9 @@ export class MailService {
 
   private get from(): string { return this.fromAddress!; }
   private get admin(): string { return this.adminAddress!; }
+  private get fromMarathon(): string { return this.fromMarathonAddress ?? this.fromAddress!; }
+  private get fromNews(): string { return this.fromNewsAddress ?? this.fromAddress!; }
+  private get replyTo(): string | undefined { return this.replyToAddress ?? undefined; }
 
   // ─── Fetch remote image → Buffer ──────────────────────────────────────────
 
@@ -104,17 +113,18 @@ export class MailService {
     } catch { /* continue without logo */ }
 
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: 'Attestation de participation', Author: 'CMCIEA France' } });
+      const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0, info: { Title: 'Attestation de participation', Author: 'CMCIEA France' } });
       const chunks: Buffer[] = [];
       doc.on('data', (c: Buffer) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const W = doc.page.width;   // 595.28
-      const H = doc.page.height;  // 841.89
-      const ml = 50;              // left margin
-      const mr = 50;              // right margin
-      const cw = W - ml - mr;    // content width
+      // Landscape A4: W ≈ 841.89 pt, H ≈ 595.28 pt
+      const W  = doc.page.width;
+      const H  = doc.page.height;
+      const ml = 55;
+      const cw = W - ml * 2;
+      const mid = ml + cw / 2;
 
       const darkBlue = '#1A3D64';
       const midBlue  = '#1D546C';
@@ -123,68 +133,73 @@ export class MailService {
       const goldBorder = '#e8c860';
 
       // ── Header ─────────────────────────────────────────────────────────────
-      doc.rect(0, 0, W, 115).fill(darkBlue);
+      const headerH = 88;
+      doc.rect(0, 0, W, headerH).fill(darkBlue);
 
       if (logoBuffer) {
-        try { doc.image(logoBuffer, ml, 18, { height: 78 }); } catch { /* skip */ }
+        try { doc.image(logoBuffer, ml, 10, { height: 68 }); } catch { /* skip */ }
       }
+      const textX    = logoBuffer ? ml + 80 : ml;
+      const textW    = logoBuffer ? cw - 80  : cw;
+      const txtAlign = logoBuffer ? 'right'  : 'center';
 
-      doc.fontSize(20).fillColor('#ffffff').font('Helvetica-Bold')
-         .text('CMCIEA FRANCE', logoBuffer ? ml + 90 : ml, 32, { width: cw - (logoBuffer ? 90 : 0), align: logoBuffer ? 'right' : 'center' });
-      doc.fontSize(9).fillColor('#a8d8e8').font('Helvetica')
-         .text('Communauté Missionnaire Chrétienne Internationale et Églises Associées', logoBuffer ? ml + 90 : ml, 58, { width: cw - (logoBuffer ? 90 : 0), align: logoBuffer ? 'right' : 'center' });
-      doc.fontSize(9).fillColor('#7ab8d0').font('Helvetica-Oblique')
-         .text('"Chercheurs de Dieu"', logoBuffer ? ml + 90 : ml, 74, { width: cw - (logoBuffer ? 90 : 0), align: logoBuffer ? 'right' : 'center' });
+      doc.fontSize(18).fillColor('#ffffff').font('Helvetica-Bold')
+         .text('CMCIEA FRANCE', textX, 18, { width: textW, align: txtAlign });
+      doc.fontSize(8).fillColor('#a8d8e8').font('Helvetica')
+         .text('Communauté Missionnaire Chrétienne Internationale et Églises Associées', textX, 44, { width: textW, align: txtAlign });
+      doc.fontSize(8).fillColor('#7ab8d0').font('Helvetica-Oblique')
+         .text('"Chercheurs de Dieu"', textX, 58, { width: textW, align: txtAlign });
 
-      // ── Outer + inner gold border ───────────────────────────────────────────
-      const fx = ml - 12, fy = 128, fw = cw + 24, fh = 640;
+      // ── Gold double border ─────────────────────────────────────────────────
+      const fx = ml - 12, fy = headerH + 12, fw = cw + 24, fh = H - headerH - 60;
       doc.roundedRect(fx, fy, fw, fh, 6).stroke(gold).lineWidth(1.5);
       doc.roundedRect(fx + 4, fy + 4, fw - 8, fh - 8, 4).stroke(gold).lineWidth(0.4);
 
       // ── Certificate title ──────────────────────────────────────────────────
-      doc.fontSize(8).fillColor(gold).font('Helvetica-Bold')
-         .text('— ATTESTATION DE PARTICIPATION —', ml, 152, { width: cw, align: 'center', characterSpacing: 3 });
+      doc.fontSize(7).fillColor(gold).font('Helvetica-Bold')
+         .text('— ATTESTATION DE PARTICIPATION —', ml, fy + 16, { width: cw, align: 'center', characterSpacing: 3 });
 
       // Gold ornament line
-      const lineY = 170;
-      doc.moveTo(ml + 60, lineY).lineTo(ml + cw - 60, lineY).stroke(gold).lineWidth(0.8);
+      const lineY = fy + 31;
+      doc.moveTo(ml + 80, lineY).lineTo(ml + cw - 80, lineY).stroke(gold).lineWidth(0.8);
 
       // Small gold diamond ornament
-      const mid = ml + cw / 2;
       doc.polygon([mid - 4, lineY], [mid, lineY - 5], [mid + 4, lineY], [mid, lineY + 5]).fill(gold);
 
       // ── Certifies ──────────────────────────────────────────────────────────
-      doc.fontSize(11).fillColor('#777777').font('Times-Italic')
-         .text('La CMCIEA-FRANCE certifie que', ml, 186, { width: cw, align: 'center' });
+      doc.fontSize(10).fillColor('#777777').font('Times-Italic')
+         .text('La CMCIEA-FRANCE certifie que', ml, lineY + 14, { width: cw, align: 'center' });
 
       // ── Full name ──────────────────────────────────────────────────────────
       doc.fontSize(28).fillColor(darkBlue).font('Helvetica-Bold')
-         .text(data.fullName, ml, 210, { width: cw, align: 'center' });
+         .text(data.fullName, ml, lineY + 30, { width: cw, align: 'center' });
 
       // Name underline
-      const nameY = 248;
-      doc.moveTo(ml + 100, nameY).lineTo(ml + cw - 100, nameY).stroke(gold).lineWidth(0.5);
+      const nameUnderY = lineY + 66;
+      doc.moveTo(ml + 120, nameUnderY).lineTo(ml + cw - 120, nameUnderY).stroke(gold).lineWidth(0.5);
 
       // ── Completion phrase ──────────────────────────────────────────────────
-      doc.fontSize(11).fillColor('#777777').font('Times-Italic')
-         .text('a complété intégralement le', ml, 262, { width: cw, align: 'center' });
+      doc.fontSize(10).fillColor('#777777').font('Times-Italic')
+         .text('a complété intégralement le', ml, nameUnderY + 12, { width: cw, align: 'center' });
 
       // ── Marathon title ─────────────────────────────────────────────────────
-      doc.fontSize(17).fillColor(midBlue).font('Helvetica-Bold')
-         .text(data.marathonTitre, ml, 285, { width: cw, align: 'center' });
+      doc.fontSize(16).fillColor(midBlue).font('Helvetica-Bold')
+         .text(data.marathonTitre, ml, nameUnderY + 28, { width: cw, align: 'center' });
 
       // ── Dates ─────────────────────────────────────────────────────────────
-      doc.fontSize(11).fillColor('#888888').font('Helvetica')
-         .text(`Du ${data.dateDebut} au ${data.dateFin}`, ml, 316, { width: cw, align: 'center' });
+      doc.fontSize(10).fillColor('#888888').font('Helvetica')
+         .text(`Du ${data.dateDebut} au ${data.dateFin}`, ml, nameUnderY + 52, { width: cw, align: 'center' });
 
       // ── Rank ──────────────────────────────────────────────────────────────
-      let sepY = 345;
+      let sepY = nameUnderY + 78;
       if (data.rank && data.totalParticipants) {
-        doc.roundedRect(ml + 100, 338, cw - 200, 26, 13)
+        const rankBoxX = ml + cw * 0.2;
+        const rankBoxW = cw * 0.6;
+        doc.roundedRect(rankBoxX, nameUnderY + 72, rankBoxW, 24, 12)
            .fillAndStroke('#EEF6FA', '#b0d4e8');
         doc.fontSize(10).fillColor(darkBlue).font('Helvetica-Bold')
-           .text(`Classement final : #${data.rank} sur ${data.totalParticipants} participants`, ml + 100, 344, { width: cw - 200, align: 'center' });
-        sepY = 380;
+           .text(`Classement final : #${data.rank} sur ${data.totalParticipants} participants`, rankBoxX, nameUnderY + 78, { width: rankBoxW, align: 'center' });
+        sepY = nameUnderY + 108;
       }
 
       // Gold separator
@@ -193,41 +208,40 @@ export class MailService {
       doc.polygon([mid - 4, sepY], [mid, sepY - 5], [mid + 4, sepY], [mid, sepY + 5]).fill(gold);
 
       // ── Verse block ────────────────────────────────────────────────────────
-      const vY = sepY + 18;
-      doc.roundedRect(ml + 15, vY, cw - 30, 78, 5)
+      const vY = sepY + 14;
+      doc.roundedRect(ml + cw * 0.1, vY, cw * 0.8, 64, 5)
          .fillAndStroke(goldLight, goldBorder).lineWidth(0.8);
 
       doc.fontSize(10).fillColor('#555555').font('Times-Italic')
-         .text('« Ta parole est une lampe à mes pieds,\net une lumière sur mon sentier. »', ml + 25, vY + 11, { width: cw - 50, align: 'center' });
+         .text('« Ta parole est une lampe à mes pieds, et une lumière sur mon sentier. »', ml + cw * 0.1 + 16, vY + 10, { width: cw * 0.8 - 32, align: 'center' });
       doc.fontSize(9).fillColor('#888888').font('Times-Roman')
-         .text('— Psaumes 119:105', ml + 25, vY + 51, { width: cw - 50, align: 'center' });
+         .text('— Psaumes 119:105', ml + cw * 0.1 + 16, vY + 42, { width: cw * 0.8 - 32, align: 'center' });
 
       // ── Signature area ────────────────────────────────────────────────────
-      const sigY = vY + 98;
+      const sigY = vY + 80;
       const today = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
 
       // Left column – date
-      doc.fontSize(9).fillColor('#888888').font('Helvetica')
-         .text('Délivrée le', ml + 20, sigY);
-      doc.fontSize(10).fillColor(darkBlue).font('Helvetica-Bold')
-         .text(today, ml + 20, sigY + 14);
+      doc.fontSize(8).fillColor('#aaaaaa').font('Helvetica')
+         .text('Délivrée le', ml + 24, sigY);
+      doc.fontSize(9).fillColor(darkBlue).font('Helvetica-Bold')
+         .text(today, ml + 24, sigY + 12);
 
       // Right column – signature
-      const sigX = ml + cw - 170;
-      doc.fontSize(9).fillColor('#888888').font('Helvetica')
+      const sigX = ml + cw - 160;
+      doc.fontSize(8).fillColor('#aaaaaa').font('Helvetica')
          .text('Le Responsable', sigX, sigY, { width: 140, align: 'center' });
-      doc.moveTo(sigX, sigY + 36).lineTo(sigX + 140, sigY + 36).stroke('#aaaaaa').lineWidth(0.6);
-      doc.fontSize(9).fillColor('#888888').font('Helvetica')
-         .text('CMCIEA France', sigX, sigY + 42, { width: 140, align: 'center' });
+      doc.moveTo(sigX, sigY + 30).lineTo(sigX + 140, sigY + 30).stroke('#bbbbbb').lineWidth(0.5);
+      doc.fontSize(8).fillColor('#aaaaaa').font('Helvetica')
+         .text('CMCIEA France', sigX, sigY + 36, { width: 140, align: 'center' });
 
       // Bottom gold line
-      const botY = fy + fh - 8;
-      doc.moveTo(ml + 40, botY).lineTo(ml + cw - 40, botY).stroke(gold).lineWidth(0.5);
+      doc.moveTo(ml + 40, fy + fh - 8).lineTo(ml + cw - 40, fy + fh - 8).stroke(gold).lineWidth(0.5);
 
       // ── Footer ─────────────────────────────────────────────────────────────
-      doc.rect(0, H - 52, W, 52).fill(darkBlue);
-      doc.fontSize(8).fillColor('#a8d8e8').font('Helvetica')
-         .text('cmciea-france.com  •  Marathon Biblique  •  CMCIEA France', 0, H - 35, { width: W, align: 'center' });
+      doc.rect(0, H - 40, W, 40).fill(darkBlue);
+      doc.fontSize(7.5).fillColor('#a8d8e8').font('Helvetica')
+         .text('cmciea-france.com  •  Marathon Biblique  •  CMCIEA France', 0, H - 25, { width: W, align: 'center' });
 
       doc.end();
     });
@@ -440,6 +454,59 @@ export class MailService {
       </p>
       <p style="margin:0;font-size:14px;color:#666;text-align:center;line-height:1.6;">Merci pour ta fid&eacute;lit&eacute; en {{annee}}, {{prenom}}&nbsp;!<br/><strong style="color:#1A3D64;">L&rsquo;&eacute;quipe CMCIEA France</strong></p>`,
       }],
+      ['rappel_lecture', {
+        label: 'Rappel de lecture',
+        description: 'Envoyé automatiquement aux participants inactifs depuis 3 jours.',
+        variables: ['prenom', 'marathonTitre', 'joursAbsence', 'percent'],
+        subject: '📖 On pense à toi — {{marathonTitre}}',
+        body: `<h2 style="margin:0 0 8px;color:#1A3D64;font-size:22px;">{{prenom}}, on ne t&rsquo;a pas vu depuis {{joursAbsence}} jours&nbsp;!</h2>
+      <p style="margin:0 0 20px;color:#555;font-size:15px;line-height:1.6;">
+        Le <strong style="color:#1D546C;">{{marathonTitre}}</strong> continue sans toi en ce moment.
+        Tu as d&eacute;j&agrave; accompli <strong>{{percent}}%</strong> du parcours &mdash; c&rsquo;est formidable&nbsp;!
+        Il serait dommage de s&rsquo;arr&ecirc;ter si pr&egrave;s du but.
+      </p>
+      <div style="background:#EEF6FA;border-radius:8px;padding:16px 20px;margin:20px 0 24px;text-align:center;">
+        <p style="margin:0;font-size:32px;font-weight:bold;color:#1D546C;">{{percent}}%</p>
+        <p style="margin:4px 0 0;font-size:13px;color:#888;">de progression accomplie &mdash; continue&nbsp;!</p>
+      </div>
+      <div style="background:#FFF8E7;border:1px solid #f0d080;border-radius:8px;padding:16px 20px;margin:0 0 28px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:13px;color:#999;font-style:italic;">Un verset pour te motiver</p>
+        <p style="margin:0;font-size:15px;color:#444;line-height:1.6;">&laquo;&nbsp;Ne vous lassons pas de faire le bien&nbsp;; car nous moissonnerons au temps convenable, si nous ne nous rel&acirc;chons pas.&nbsp;&raquo;</p>
+        <p style="margin:8px 0 0;font-size:13px;color:#888;"><em>Galates 6:9</em></p>
+      </div>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="https://cmciea-france.com/marathon-biblique" style="display:inline-block;background:linear-gradient(135deg,#1D546C,#1A3D64);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:15px;font-weight:bold;">Reprendre ma lecture &rarr;</a>
+      </p>
+      <p style="margin:0;font-size:14px;color:#666;text-align:center;">On croit en toi&nbsp;!<br/><strong style="color:#1A3D64;">L&rsquo;&eacute;quipe CMCIEA France</strong></p>`,
+      }],
+      ['newsletter_nouveau_marathon', {
+        label: 'Newsletter — Nouveau Marathon',
+        description: 'Envoyée à tous les anciens participants lors du lancement d\'un nouveau marathon.',
+        variables: ['marathonTitre', 'dateDebut', 'dateFin', 'description', 'flyerBlock'],
+        subject: '📖 Nouveau Marathon Biblique — {{marathonTitre}}',
+        body: `<h2 style="margin:0 0 8px;color:#1A3D64;font-size:22px;">Un nouveau Marathon Biblique est lanc&eacute;&nbsp;! &#128214;</h2>
+      <p style="margin:0 0 20px;color:#555;font-size:15px;line-height:1.6;">
+        Parce que vous avez d&eacute;j&agrave; particip&eacute; &agrave; l&rsquo;un de nos marathons, nous sommes heureux de vous annoncer le lancement du
+        <strong style="color:#1D546C;">{{marathonTitre}}</strong>.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#EEF6FA;border-left:4px solid #00B7B5;border-radius:6px;margin:0 0 24px;">
+        <tr><td style="padding:16px 20px;">
+          <p style="margin:0 0 6px;font-size:14px;color:#888;text-transform:uppercase;letter-spacing:0.5px;">D&eacute;tails du marathon</p>
+          <p style="margin:0;font-size:15px;color:#1A3D64;"><strong>&#128197; {{dateDebut}} &rarr; {{dateFin}}</strong></p>
+          <p style="margin:4px 0 0;font-size:14px;color:#555;">{{description}}</p>
+        </td></tr>
+      </table>
+      {{flyerBlock}}
+      <div style="background:#FFF8E7;border:1px solid #f0d080;border-radius:8px;padding:16px 20px;margin:0 0 28px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:13px;color:#999;font-style:italic;">Un verset pour vous encourager</p>
+        <p style="margin:0;font-size:15px;color:#444;line-height:1.6;">&laquo;&nbsp;Ta parole est une lampe &agrave; mes pieds, et une lumi&egrave;re sur mon sentier.&nbsp;&raquo;</p>
+        <p style="margin:8px 0 0;font-size:13px;color:#888;"><em>Psaumes 119:105</em></p>
+      </div>
+      <p style="text-align:center;margin:0 0 24px;">
+        <a href="https://cmciea-france.com/marathon-biblique" style="display:inline-block;background:linear-gradient(135deg,#1D546C,#1A3D64);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:15px;font-weight:bold;">S&rsquo;inscrire au marathon &rarr;</a>
+      </p>
+      <p style="margin:0;font-size:14px;color:#666;line-height:1.6;">Que Dieu b&eacute;nisse votre lecture&nbsp;!<br/><br/>Avec affection,<br/><strong style="color:#1A3D64;">L&rsquo;&eacute;quipe CMCIEA France</strong></p>`,
+      }],
       ['confirmation_departement', {
         label: 'Confirmation Département',
         description: 'Envoyé quand quelqu\'un demande à rejoindre un département.',
@@ -594,6 +661,7 @@ export class MailService {
       from: this.from,
       to: dto.email,
       subject: `Confirmation d'inscription – ${label}`,
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
       html: `
         <h2>Bonjour ${dto.prenom} ${dto.nom},</h2>
         <p>Votre inscription &agrave; <strong>${label}</strong> a bien &eacute;t&eacute; enregistr&eacute;e.</p>
@@ -627,7 +695,8 @@ export class MailService {
       to: dto.email,
       subject,
       html: this.emailShell(body),
-    }).catch(err => this.logger.error('Mail confirmation département', err));
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail confirmation département', err));
   }
 
   async sendContact(nom: string, email: string, message: string) {
@@ -662,8 +731,9 @@ export class MailService {
       description:   marathon.description ?? '',
     });
     await this.resend!.emails.send({
-      from: this.from, to, subject, html: this.emailShell(body),
-    }).catch(err => this.logger.error('Mail bienvenue marathon', err));
+      from: this.fromMarathon, to, subject, html: this.emailShell(body),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail bienvenue marathon', err));
   }
 
   async sendEncouragementMarathon(to: string, fullName: string, marathon: any, percent: number) {
@@ -677,8 +747,9 @@ export class MailService {
       percent:       String(percent),
     });
     await this.resend!.emails.send({
-      from: this.from, to, subject, html: this.emailShell(body),
-    }).catch(err => this.logger.error('Mail encouragement marathon', err));
+      from: this.fromMarathon, to, subject, html: this.emailShell(body),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail encouragement marathon', err));
   }
 
   async sendAttestationMarathon(
@@ -719,10 +790,11 @@ export class MailService {
     }
 
     await this.resend!.emails.send({
-      from: this.from,
+      from: this.fromMarathon,
       to,
       subject,
       html: this.emailShell(body),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
       ...(pdfBuffer ? {
         attachments: [{
           filename: `attestation-${marathon.titre.replace(/\s+/g, '-').toLowerCase()}.pdf`,
@@ -741,8 +813,9 @@ export class MailService {
       nbMarathons:  String(nbMarathons),
     });
     await this.resend!.emails.send({
-      from: this.from, to, subject, html: this.emailShell(body),
-    }).catch(err => this.logger.error('Mail attestation annuelle', err));
+      from: this.fromMarathon, to, subject, html: this.emailShell(body),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail attestation annuelle', err));
   }
 
   async sendAnnonce(destinataires: string[], sujet: string, contenu: string) {
@@ -750,7 +823,7 @@ export class MailService {
 
     for (const to of destinataires) {
       await this.resend!.emails.send({
-        from: this.from,
+        from: this.fromNews,
         to,
         subject: sujet,
         html: `
@@ -760,7 +833,8 @@ export class MailService {
             CMCIEA France &mdash; <a href="https://cmciea-france.com">cmciea-france.com</a>
           </p>
         `,
-      }).catch((err) => this.logger.error('Resend error', err));
+        ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+      } as any).catch((err) => this.logger.error('Resend error', err));
     }
   }
 
@@ -798,10 +872,99 @@ export class MailService {
     `;
 
     await this.resend!.emails.send({
-      from: this.from,
+      from: this.fromNews,
       to,
       subject: sujet,
       html: this.emailShell(body),
-    }).catch(err => this.logger.error('Mail culte annonce', err));
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail culte annonce', err));
+  }
+
+  async sendConfirmationPriere(to: string, prenom: string, sujet: string) {
+    if (!this.canSendMail()) return;
+    await this.resend!.emails.send({
+      from: this.from,
+      to,
+      subject: 'Votre demande de prière a bien été reçue — CMCIEA France',
+      html: this.emailShell(`
+        <h2 style="margin:0 0 8px;color:#1A3D64;font-size:22px;">Merci, ${prenom}&nbsp;! 🙏</h2>
+        <p style="margin:0 0 20px;color:#555;font-size:15px;line-height:1.6;">
+          Votre demande de prière concernant <strong style="color:#1D546C;">"${sujet}"</strong>
+          a bien été reçue. Notre équipe va la porter devant le Seigneur.
+        </p>
+        <div style="background:#FFF8E7;border:1px solid #f0d080;border-radius:8px;padding:16px 20px;margin:0 0 28px;text-align:center;">
+          <p style="margin:0;font-size:15px;color:#444;line-height:1.6;">&laquo;&nbsp;La prière fervente du juste a une grande efficace.&nbsp;&raquo;</p>
+          <p style="margin:8px 0 0;font-size:13px;color:#888;"><em>Jacques 5:16</em></p>
+        </div>
+        <p style="margin:0;font-size:14px;color:#666;text-align:center;line-height:1.6;">
+          Avec toute notre affection,<br/><strong style="color:#1A3D64;">L'équipe CMCIEA France</strong>
+        </p>`),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail confirmation prière', err));
+  }
+
+  async sendConfirmationNewsletter(to: string, prenom: string) {
+    if (!this.canSendMail()) return;
+    await this.resend!.emails.send({
+      from: this.fromNews,
+      to,
+      subject: 'Bienvenue dans notre newsletter — CMCIEA France',
+      html: this.emailShell(`
+        <h2 style="margin:0 0 8px;color:#1A3D64;font-size:22px;">Bienvenue, ${prenom}&nbsp;! 🎉</h2>
+        <p style="margin:0 0 20px;color:#555;font-size:15px;line-height:1.6;">
+          Vous êtes maintenant abonné à la newsletter de <strong style="color:#1D546C;">CMCIEA France</strong>.
+          Vous recevrez nos actualités, annonces et informations sur nos prochains événements.
+        </p>
+        <p style="margin:0;font-size:14px;color:#666;text-align:center;line-height:1.6;">
+          Que le Seigneur vous bénisse&nbsp;!<br/><strong style="color:#1A3D64;">L'équipe CMCIEA France</strong>
+        </p>`),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail confirmation newsletter', err));
+  }
+
+  async sendRappelLecture(to: string, fullName: string, marathon: any, joursAbsence: number, progressPercent = 0) {
+    if (!this.canSendMail()) return;
+    const { subject, body } = await this.getTemplate('rappel_lecture', {
+      prenom:        fullName.split(' ')[0],
+      marathonTitre: marathon.titre,
+      joursAbsence:  String(joursAbsence),
+      percent:       String(progressPercent),
+    });
+    await this.resend!.emails.send({
+      from: this.fromMarathon, to, subject, html: this.emailShell(body),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Rappel lecture', err));
+  }
+
+  async sendNewsletterNouveauMarathon(to: string, marathon: {
+    titre: string;
+    description: string;
+    dateDebut: string;
+    dateFin: string;
+    flyerUrl?: string | null;
+  }) {
+    if (!this.canSendMail()) return;
+
+    const flyerBlock = marathon.flyerUrl
+      ? `<div style="text-align:center;margin:20px 0;">
+           <img src="${marathon.flyerUrl}" alt="Flyer marathon" style="max-width:100%;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);"/>
+         </div>`
+      : '';
+
+    const { subject, body } = await this.getTemplate('newsletter_nouveau_marathon', {
+      marathonTitre: marathon.titre,
+      dateDebut:     marathon.dateDebut,
+      dateFin:       marathon.dateFin,
+      description:   marathon.description,
+      flyerBlock,
+    });
+
+    await this.resend!.emails.send({
+      from: this.fromNews,
+      to,
+      subject,
+      html: this.emailShell(body),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Newsletter nouveau marathon', err));
   }
 }

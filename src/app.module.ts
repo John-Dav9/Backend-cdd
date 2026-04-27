@@ -14,7 +14,9 @@ import { InscriptionsModule } from './inscriptions/inscriptions.module';
 import { MailModule } from './mail/mail.module';
 import { MarathonModule } from './marathon/marathon.module';
 import { MessagesModule } from './messages/messages.module';
+import { NewsletterModule } from './newsletter/newsletter.module';
 import { PagesModule } from './pages/pages.module';
+import { PrieresModule } from './prieres/prieres.module';
 import { UserModule } from './user/user.module';
 import { TemoignagesModule } from './temoignages/temoignages.module';
 import { SettingsModule } from './settings/settings.module';
@@ -43,6 +45,8 @@ import { SettingsModule } from './settings/settings.module';
     MessagesModule,
     ContactModule,
     MarathonModule,
+    PrieresModule,
+    NewsletterModule,
     UserModule,
   ],
   providers: [

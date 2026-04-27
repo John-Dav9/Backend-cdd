@@ -67,7 +67,46 @@ export class MarathonService {
       createdAt: now,
     });
 
+    // Newsletter aux anciens participants (fire-and-forget)
+    this.sendNewsletterToAllParticipants(docRef.id, {
+      titre: dto.titre,
+      description: dto.description ?? '',
+      dateDebut: dto.dateDebut,
+      dateFin: dto.dateFin,
+      flyerUrl: (dto as any).flyerUrl ?? null,
+    }).catch(err => this.logger.error('Newsletter nouveau marathon', err));
+
     return { id: docRef.id, nbJours, nbChapitres: planLecture.length };
+  }
+
+  private async sendNewsletterToAllParticipants(newMarathonId: string, marathon: {
+    titre: string; description: string; dateDebut: string; dateFin: string; flyerUrl?: string | null;
+  }) {
+    const snap = await this.firebase.firestore.collection(this.inscCol).get();
+    const emails = new Set<string>();
+    snap.docs.forEach(d => {
+      const data = d.data();
+      if (data['email'] && data['marathonId'] !== newMarathonId) {
+        emails.add(data['email']);
+      }
+    });
+    for (const email of emails) {
+      await this.mail.sendNewsletterNouveauMarathon(email, marathon).catch(
+        err => this.logger.error('Newsletter email failed', err),
+      );
+    }
+  }
+
+  async uploadFlyer(id: string, file: { originalname: string; mimetype: string; buffer: Buffer }) {
+    await this.getOrFail(id);
+    const bucket = this.firebase.storage.bucket();
+    const path = `marathons/${id}/flyer_${Date.now()}_${file.originalname}`;
+    const ref = bucket.file(path);
+    await ref.save(file.buffer, { contentType: file.mimetype });
+    await ref.makePublic();
+    const url = ref.publicUrl();
+    await this.firebase.firestore.collection(this.col).doc(id).update({ flyerUrl: url });
+    return { flyerUrl: url };
   }
 
   async findAll(adminMode = false) {
@@ -152,6 +191,40 @@ export class MarathonService {
 
     if (snap.size > 0) {
       this.logger.log(`${snap.size} marathon(s) archivé(s) automatiquement.`);
+    }
+  }
+
+  // ─── Cron : rappels de lecture quotidiens ─────────────────────────────────
+
+  @Cron('0 9 * * *')
+  async envoyerRappelsLecture() {
+    const todayMs = Date.now();
+    const marathonsSnap = await this.firebase.firestore
+      .collection(this.col)
+      .where('statut', '==', MarathonStatut.ACTIF)
+      .get();
+
+    for (const marathonDoc of marathonsSnap.docs) {
+      const marathon = { id: marathonDoc.id, ...marathonDoc.data() };
+      const inscrSnap = await this.firebase.firestore
+        .collection(this.inscCol)
+        .where('marathonId', '==', marathonDoc.id)
+        .get();
+
+      for (const inscDoc of inscrSnap.docs) {
+        const insc = inscDoc.data();
+        if ((insc['progressPercent'] ?? 0) >= 100) continue;
+        const lastActivity = insc['lastActivityAt'] as string | null;
+        if (!lastActivity) continue;
+
+        const daysSince = (todayMs - new Date(lastActivity).getTime()) / 86_400_000;
+        // Envoyer un rappel exactement quand l'inactivité atteint 3 jours (fenêtre de ±12h)
+        if (daysSince >= 3 && daysSince < 4) {
+          await this.mail.sendRappelLecture(
+            insc['email'], insc['fullName'], marathon, Math.floor(daysSince), insc['progressPercent'] ?? 0,
+          ).catch((err: any) => this.logger.error('Rappel lecture', err));
+        }
+      }
     }
   }
 
@@ -241,7 +314,30 @@ export class MarathonService {
       );
       resultMilestones.push(...newMilestones);
 
-      t.update(inscRef, { progress, progressPercent: resultPercent, milestonesReached: resultMilestones });
+      // Streak calculation
+      const todayStr = new Date().toISOString().split('T')[0];
+      let currentStreak: number = (inscData['currentStreak'] as number) ?? 0;
+      let maxStreak: number     = (inscData['maxStreak']     as number) ?? 0;
+      const lastActivityAt      = inscData['lastActivityAt'] as string | null;
+      let streakUpdate: Record<string, any> = {};
+
+      if (dto.checked) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        if (lastActivityAt === todayStr) {
+          // Already read today — no change
+        } else if (lastActivityAt === yesterdayStr) {
+          currentStreak += 1;
+        } else {
+          currentStreak = 1;
+        }
+        maxStreak = Math.max(currentStreak, maxStreak);
+        streakUpdate = { currentStreak, maxStreak, lastActivityAt: todayStr };
+      }
+
+      t.update(inscRef, { progress, progressPercent: resultPercent, milestonesReached: resultMilestones, ...streakUpdate });
     });
 
     // Envoi des emails hors transaction (les opérations async ne sont pas autorisées dedans)
@@ -271,6 +367,33 @@ export class MarathonService {
     return { percent: resultPercent, milestonesReached: resultMilestones };
   }
 
+  // ─── Leaderboard public ───────────────────────────────────────────────────
+
+  async getLeaderboard(marathonId: string) {
+    const snap = await this.firebase.firestore
+      .collection(this.inscCol)
+      .where('marathonId', '==', marathonId)
+      .get();
+
+    return snap.docs
+      .map(d => d.data())
+      .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0))
+      .map((d, i) => ({
+        rank:             i + 1,
+        name:             this.anonymizeName(d['fullName'] ?? ''),
+        progressPercent:  d['progressPercent'] ?? 0,
+        milestonesReached: d['milestonesReached'] ?? [],
+        currentStreak:    d['currentStreak'] ?? 0,
+        maxStreak:        d['maxStreak'] ?? 0,
+      }));
+  }
+
+  private anonymizeName(fullName: string): string {
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0];
+    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  }
+
   async getProgression(marathonId: string, email: string) {
     await this.getOrFail(marathonId);
 
@@ -298,10 +421,13 @@ export class MarathonService {
     const totalParticipants = allSnap.size;
 
     return {
-      fullName: data.fullName,
-      progress: data.progress,
-      progressPercent: data.progressPercent,
+      fullName:          data.fullName,
+      progress:          data.progress,
+      progressPercent:   data.progressPercent,
       milestonesReached: data.milestonesReached,
+      currentStreak:     data.currentStreak ?? 0,
+      maxStreak:         data.maxStreak ?? 0,
+      lastActivityAt:    data.lastActivityAt ?? null,
       rank,
       totalParticipants,
     };
@@ -323,6 +449,9 @@ export class MarathonService {
         email: d.email,
         progressPercent: d.progressPercent,
         milestonesReached: d.milestonesReached,
+        currentStreak: d.currentStreak ?? 0,
+        maxStreak: d.maxStreak ?? 0,
+        lastActivityAt: d.lastActivityAt ?? null,
         createdAt: d.createdAt,
       }));
   }

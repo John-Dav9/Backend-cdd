@@ -1,6 +1,7 @@
 import {
-  Body, Controller, Delete, Get, Param, Patch, Post, Query,
+  Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
 import { MarathonService } from './marathon.service';
@@ -34,6 +35,24 @@ export class MarathonController {
     return this.service.getInscrits(id);
   }
 
+  @Get(':id/inscrits/csv')
+  async exportCSV(@Param('id') id: string, @Res() res: any) {
+    const rows = await this.service.getInscrits(id);
+    const marathon = await this.service.findOne(id);
+    const header = ['Rang', 'Nom', 'Email', 'Progression (%)', 'Jalons', 'Streak actuel', 'Streak max', 'Inscription'];
+    const lines = rows.map((r: any) => [
+      r.rank, r.fullName, r.email, r.progressPercent,
+      (r.milestonesReached ?? []).join('|'),
+      r.currentStreak ?? 0, r.maxStreak ?? 0,
+      r.createdAt?._seconds ? new Date(r.createdAt._seconds * 1000).toLocaleDateString('fr-FR') : '',
+    ].join(';'));
+    const csv = [header.join(';'), ...lines].join('\n');
+    const filename = `${(marathon as any).titre?.replace(/\s+/g, '-').toLowerCase() ?? 'marathon'}-inscrits.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send('﻿' + csv); // BOM UTF-8 for Excel
+  }
+
   @Patch(':id/archiver')
   archiver(@Param('id') id: string) {
     return this.service.archiver(id);
@@ -47,6 +66,12 @@ export class MarathonController {
   @Delete(':id')
   supprimer(@Param('id') id: string) {
     return this.service.supprimer(id);
+  }
+
+  @Post(':id/flyer')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadFlyer(@Param('id') id: string, @UploadedFile() file: any) {
+    return this.service.uploadFlyer(id, file);
   }
 
   @Post('attestations-annuelles')
@@ -66,6 +91,12 @@ export class MarathonController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
+  }
+
+  @Public()
+  @Get(':id/leaderboard')
+  getLeaderboard(@Param('id') id: string) {
+    return this.service.getLeaderboard(id);
   }
 
   @Public()
