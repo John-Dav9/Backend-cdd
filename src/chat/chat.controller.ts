@@ -1,10 +1,15 @@
 import { Body, Controller, Post, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { IsString, IsArray, IsOptional } from 'class-validator';
 import { ChatService, ChatMessage } from './chat.service';
 import { Public } from '../auth/public.decorator';
 
 class ChatDto {
+  @IsArray()
+  @IsOptional()
   history: ChatMessage[];
+
+  @IsString()
   message: string;
 }
 
