@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 
 const SYSTEM_PROMPT = `Tu es l'assistant virtuel de l'église CMCIEA-France (Communauté Missionnaire Chrétienne Internationale et Églises Associées), aussi connue sous le nom "Chercheurs de Dieu".
 
@@ -59,29 +59,26 @@ export interface ChatMessage {
 
 @Injectable()
 export class ChatService {
-  private genAI: GoogleGenerativeAI;
+  private groq: Groq;
 
   constructor() {
-    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
+    this.groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
 
   async chat(history: ChatMessage[], userMessage: string): Promise<string> {
-    const model = this.genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-lite',
-      systemInstruction: SYSTEM_PROMPT,
+    const messages = [
+      { role: 'system' as const, content: SYSTEM_PROMPT },
+      ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      { role: 'user' as const, content: userMessage },
+    ];
+
+    const completion = await this.groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages,
+      max_tokens: 512,
+      temperature: 0.7,
     });
 
-    const geminiHistory = history.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
-
-    // Gemini requires history to start with a 'user' message
-    const firstUserIdx = geminiHistory.findIndex(m => m.role === 'user');
-    const validHistory = firstUserIdx >= 0 ? geminiHistory.slice(firstUserIdx) : [];
-
-    const chatSession = model.startChat({ history: validHistory });
-    const result = await chatSession.sendMessage(userMessage);
-    return result.response.text();
+    return completion.choices[0]?.message?.content ?? '';
   }
 }
