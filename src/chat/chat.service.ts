@@ -76,7 +76,11 @@ export class ChatService {
       parts: [{ text: m.content }],
     }));
 
-    const chatSession = model.startChat({ history: geminiHistory });
+    // Gemini requires history to start with a 'user' message
+    const firstUserIdx = geminiHistory.findIndex(m => m.role === 'user');
+    const validHistory = firstUserIdx >= 0 ? geminiHistory.slice(firstUserIdx) : [];
+
+    const chatSession = model.startChat({ history: validHistory });
     const result = await chatSession.sendMessage(userMessage);
     return result.response.text();
   }
