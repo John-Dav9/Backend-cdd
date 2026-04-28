@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const SYSTEM_PROMPT = `Tu es l'assistant virtuel de l'église CMCIEA-France (Communauté Missionnaire Chrétienne Internationale et Églises Associées), aussi connue sous le nom "Chercheurs de Dieu".
 
@@ -59,26 +59,25 @@ export interface ChatMessage {
 
 @Injectable()
 export class ChatService {
-  private client: Anthropic;
+  private genAI: GoogleGenerativeAI;
 
   constructor() {
-    this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '');
   }
 
   async chat(history: ChatMessage[], userMessage: string): Promise<string> {
-    const messages = [
-      ...history.map(m => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content: userMessage },
-    ];
-
-    const response = await this.client.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 512,
-      system:     SYSTEM_PROMPT,
-      messages,
+    const model = this.genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      systemInstruction: SYSTEM_PROMPT,
     });
 
-    const block = response.content[0];
-    return block.type === 'text' ? block.text : '';
+    const geminiHistory = history.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+
+    const chatSession = model.startChat({ history: geminiHistory });
+    const result = await chatSession.sendMessage(userMessage);
+    return result.response.text();
   }
 }
