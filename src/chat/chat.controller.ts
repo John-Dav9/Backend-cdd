@@ -33,8 +33,9 @@ export class ChatController {
       const reply = await this.chatService.chat(history, dto.message.trim());
       return { reply };
     } catch (err) {
-      this.logger.error('Gemini API error:', (err as Error)?.message ?? err);
-      throw new HttpException('Erreur lors de la génération de la réponse.', HttpStatus.INTERNAL_SERVER_ERROR);
+      const msg = (err as Error)?.message ?? String(err);
+      this.logger.error('Gemini API error:', msg);
+      throw new HttpException({ error: msg }, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
