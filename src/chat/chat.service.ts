@@ -67,7 +67,7 @@ export class ChatService {
 
   async chat(history: ChatMessage[], userMessage: string): Promise<string> {
     const model = this.genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.0-flash-lite',
       systemInstruction: SYSTEM_PROMPT,
     });
 
