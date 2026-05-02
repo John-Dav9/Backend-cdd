@@ -1,5 +1,5 @@
-import { Body, Controller, IsString, Post, Request } from '@nestjs/common';
-import { IsEmail, IsNotEmpty } from 'class-validator';
+import { Body, Controller, Post, Request } from '@nestjs/common';
+import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
 import { AuthService } from './auth.service';
 import { Public } from './public.decorator';
 

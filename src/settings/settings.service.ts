@@ -33,6 +33,7 @@ export class SettingsService {
     @InjectRepository(EmailTemplate) private templateRepo: Repository<EmailTemplate>,
     @InjectRepository(MarathonInscription) private marathonInscRepo: Repository<MarathonInscription>,
     @InjectRepository(Inscription) private inscRepo: Repository<Inscription>,
+    @InjectRepository(Actualite) private actualiteRepo: Repository<Actualite>,
     private mail: MailService,
     private storage: StorageService,
   ) {}
@@ -88,10 +89,10 @@ export class SettingsService {
     return this.getSetting<any>('next_culte', null);
   }
 
-  async updateNextCulte(data: { sujet: string; date: string; message: string }, actualiteRepo: Repository<Actualite>) {
+  async updateNextCulte(data: { sujet: string; date: string; message: string }) {
     await this.setSetting('next_culte', data);
 
-    await actualiteRepo.save(actualiteRepo.create({
+    await this.actualiteRepo.save(this.actualiteRepo.create({
       titre: `Prochain culte en présentiel : ${data.sujet}`,
       contenu: `${data.message}\n\nDate : ${data.date}`,
       auteur: 'Administration',
