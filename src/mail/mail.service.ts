@@ -817,18 +817,21 @@ export class MailService {
   async sendAnnonce(destinataires: string[], sujet: string, contenu: string) {
     if (!this.canSendMail()) return;
 
+    const body = `
+      <h2 style="margin:0 0 16px;color:#1A3D64;font-size:22px;">${sujet}</h2>
+      <div style="color:#444;font-size:15px;line-height:1.7;">${contenu.replace(/\n/g, '<br/>')}</div>
+      <p style="margin:32px 0 0;font-size:14px;color:#666;line-height:1.6;">
+        Que le Seigneur vous bénisse,<br/>
+        <strong style="color:#1A3D64;">L'équipe CMCIEA France</strong>
+      </p>
+    `;
+
     for (const to of destinataires) {
       await this.resend!.emails.send({
         from: this.fromNews,
         to,
         subject: sujet,
-        html: `
-          <div>${contenu}</div>
-          <br/>
-          <p style="color:#999;font-size:12px;">
-            CMCIEA France &mdash; <a href="https://cmciea-france.com">cmciea-france.com</a>
-          </p>
-        `,
+        html: this.emailShell(body),
         ...(this.replyTo ? { reply_to: this.replyTo } : {}),
       } as any).catch((err) => this.logger.error('Resend error', err));
     }
