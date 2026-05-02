@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Annonce } from '../database/entities/annonce.entity';
@@ -10,6 +10,8 @@ import { CreateAnnonceDto } from './dto/create-annonce.dto';
 
 @Injectable()
 export class AnnoncesService {
+  private readonly logger = new Logger(AnnoncesService.name);
+
   constructor(
     @InjectRepository(Annonce) private repo: Repository<Annonce>,
     @InjectRepository(Inscription) private inscRepo: Repository<Inscription>,
@@ -38,8 +40,9 @@ export class AnnoncesService {
             .filter(e => e.includes('@')),
         ),
       ];
-      // Envoi en arrière-plan : ne bloque pas la réponse HTTP
-      this.mail.sendAnnonce(emails, dto.titre, dto.contenu).catch(() => {});
+      this.logger.log(`Envoi annonce "${dto.titre}" à ${emails.length} destinataire(s)`);
+      this.mail.sendAnnonce(emails, dto.titre, dto.contenu)
+        .catch(err => this.logger.error('Erreur envoi annonce', err));
     }
 
     return { id: saved.id, message: 'Annonce créée' };
