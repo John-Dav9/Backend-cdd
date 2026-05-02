@@ -1,43 +1,52 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FirestoreRepository } from '../firebase/firestore.repository';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Actualite } from '../database/entities/actualite.entity';
 import { CreateActualiteDto } from './dto/create-actualite.dto';
 
 @Injectable()
 export class ActualitesService {
-  constructor(private readonly repo: FirestoreRepository) {}
+  constructor(@InjectRepository(Actualite) private repo: Repository<Actualite>) {}
+
+  private parseTags(tags?: string): string[] {
+    if (!tags) return [];
+    return tags.split(',').map(t => t.trim()).filter(Boolean);
+  }
 
   async create(dto: CreateActualiteDto) {
-    const doc = await this.repo.add('actualites', {
-      ...dto,
+    const entity = this.repo.create({
+      titre: dto.titre,
+      contenu: dto.contenu,
+      auteur: dto.auteur,
+      imageUrl: dto.imageUrl,
+      videoId: dto.videoId,
       publiee: dto.publiee ?? false,
-      createdAt: new Date().toISOString(),
+      tags: this.parseTags(dto.tags),
     });
-    return { id: doc.id, message: 'Actualité créée' };
+    const saved = await this.repo.save(entity);
+    return { id: saved.id, message: 'Actualité créée' };
   }
 
   async findAll(publieeOnly = false) {
-    let query: FirebaseFirestore.Query = this.repo.collection('actualites');
-    if (publieeOnly) query = query.where('publiee', '==', true);
-    const snap = await query.orderBy('createdAt', 'desc').get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return this.repo.find({ where: publieeOnly ? { publiee: true } : {}, order: { createdAt: 'DESC' } });
   }
 
   async findOne(id: string) {
-    const doc = await this.repo.getById('actualites', id);
-    if (!doc.exists) throw new NotFoundException('Actualité introuvable');
-    return { id: doc.id, ...doc.data() };
+    const a = await this.repo.findOne({ where: { id } });
+    if (!a) throw new NotFoundException('Actualité introuvable');
+    return a;
   }
 
-  async update(id: string, data: Partial<CreateActualiteDto>) {
-    await this.repo.update('actualites', id, {
-      ...data,
-      updatedAt: new Date().toISOString(),
-    });
+  async update(id: string, dto: Partial<CreateActualiteDto>) {
+    const { tags, ...rest } = dto;
+    const data: Partial<Actualite> = { ...rest };
+    if (tags !== undefined) data.tags = this.parseTags(tags);
+    await this.repo.update(id, data);
     return { message: 'Actualité mise à jour' };
   }
 
   async remove(id: string) {
-    await this.repo.remove('actualites', id);
+    await this.repo.delete(id);
     return { message: 'Actualité supprimée' };
   }
 }

@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
-import { FirebaseModule } from '../firebase/firebase.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { NewsletterSubscriber } from '../database/entities/newsletter-subscriber.entity';
 import { MailModule } from '../mail/mail.module';
 import { NewsletterController } from './newsletter.controller';
 import { NewsletterService } from './newsletter.service';
 
 @Module({
-  imports: [FirebaseModule, MailModule],
+  imports: [TypeOrmModule.forFeature([NewsletterSubscriber]), MailModule],
   controllers: [NewsletterController],
   providers: [NewsletterService],
 })

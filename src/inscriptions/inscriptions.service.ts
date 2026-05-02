@@ -1,37 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { FirestoreRepository } from '../firebase/firestore.repository';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Inscription } from '../database/entities/inscription.entity';
 import { MailService } from '../mail/mail.service';
 import { CreateInscriptionDto, InscriptionType } from './dto/create-inscription.dto';
 
 @Injectable()
 export class InscriptionsService {
   constructor(
-    private readonly repo: FirestoreRepository,
+    @InjectRepository(Inscription) private repo: Repository<Inscription>,
     private mail: MailService,
   ) {}
 
   async create(dto: CreateInscriptionDto) {
-    const doc = await this.repo.add('inscriptions', {
-      ...dto,
-      statut: 'CONFIRME',
-      createdAt: new Date().toISOString(),
-    });
-
+    const saved = await this.repo.save(this.repo.create({ ...dto, statut: 'CONFIRME' }));
     await this.mail.sendConfirmationInscription(dto);
-
-    return { id: doc.id, message: 'Inscription enregistrée avec succès' };
+    return { id: saved.id, message: 'Inscription enregistrée avec succès' };
   }
 
   async findAll(type?: InscriptionType) {
-    let query: FirebaseFirestore.Query = this.repo.collection('inscriptions');
-    if (type) query = query.where('type', '==', type);
-
-    const snap = await query.orderBy('createdAt', 'desc').get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return this.repo.find({ where: type ? { type } : {}, order: { createdAt: 'DESC' } });
   }
 
   async remove(id: string) {
-    await this.repo.remove('inscriptions', id);
+    await this.repo.delete(id);
     return { message: 'Inscription supprimée' };
   }
 }

@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Marathon } from '../database/entities/marathon.entity';
+import { MarathonInscription } from '../database/entities/marathon-inscription.entity';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
-import { FirebaseModule } from '../firebase/firebase.module';
 
 @Module({
-  imports: [FirebaseModule],
+  imports: [TypeOrmModule.forFeature([MarathonInscription, Marathon])],
   controllers: [UserController],
   providers: [UserService],
 })

@@ -3,9 +3,11 @@ import * as http from 'http';
 import PDFDocument = require('pdfkit');
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Resend } from 'resend';
 import { CreateInscriptionDto, InscriptionType } from '../inscriptions/dto/create-inscription.dto';
-import { FirebaseService } from '../firebase/firebase.service';
+import { EmailTemplate as EmailTemplateEntity } from '../database/entities/email-template.entity';
 
 export interface EmailTemplate {
   key: string;
@@ -17,8 +19,6 @@ export interface EmailTemplate {
   customized?: boolean;
   updatedAt?: string;
 }
-
-const TEMPLATE_COL = 'email_templates';
 
 @Injectable()
 export class MailService {
@@ -32,7 +32,7 @@ export class MailService {
 
   constructor(
     private config: ConfigService,
-    private firebase: FirebaseService,
+    @InjectRepository(EmailTemplateEntity) private templateRepo: Repository<EmailTemplateEntity>,
   ) {
     const resendApiKey = this.config.get<string>('RESEND_API_KEY');
     this.fromAddress = this.config.get<string>('MAIL_FROM')?.trim() || null;
@@ -558,14 +558,13 @@ export class MailService {
     let body    = def?.body    ?? '';
 
     try {
-      const doc = await this.firebase.firestore.doc(`${TEMPLATE_COL}/${key}`).get();
-      if (doc.exists) {
-        const data = doc.data()!;
-        if (data['subject']) subject = data['subject'];
-        if (data['body'])    body    = data['body'];
+      const row = await this.templateRepo.findOne({ where: { key } });
+      if (row) {
+        if (row.subject) subject = row.subject;
+        if (row.body)    body    = row.body;
       }
     } catch (err) {
-      this.logger.warn(`Failed to load email template "${key}" from Firestore`, err);
+      this.logger.warn(`Failed to load email template "${key}" from database`, err);
     }
 
     return {
@@ -578,19 +577,18 @@ export class MailService {
 
   async listTemplates(): Promise<EmailTemplate[]> {
     const defaults = this.defaultTemplates();
+    const customRows = await this.templateRepo.find();
+    const customMap  = new Map(customRows.map(r => [r.key, r]));
     const result: EmailTemplate[] = [];
 
     for (const [key, def] of defaults) {
-      let customized = false;
-      let updatedAt: string | undefined;
-      try {
-        const doc = await this.firebase.firestore.doc(`${TEMPLATE_COL}/${key}`).get();
-        if (doc.exists) {
-          customized = true;
-          updatedAt  = doc.data()?.['updatedAt'];
-        }
-      } catch { /* ignore */ }
-      result.push({ key, ...def, customized, updatedAt });
+      const custom = customMap.get(key);
+      result.push({
+        key, ...def,
+        customized: !!custom,
+        updatedAt:  custom?.updatedAt?.toISOString(),
+        ...(custom ? { subject: custom.subject, body: custom.body } : {}),
+      });
     }
     return result;
   }
@@ -600,21 +598,18 @@ export class MailService {
     const def = defaults.get(key);
     if (!def) return null;
 
-    let subject = def.subject;
-    let body    = def.body;
+    let subject   = def.subject;
+    let body      = def.body;
     let customized = false;
     let updatedAt: string | undefined;
 
-    try {
-      const doc = await this.firebase.firestore.doc(`${TEMPLATE_COL}/${key}`).get();
-      if (doc.exists) {
-        const data = doc.data()!;
-        if (data['subject']) subject = data['subject'];
-        if (data['body'])    body    = data['body'];
-        customized = true;
-        updatedAt  = data['updatedAt'];
-      }
-    } catch { /* use defaults */ }
+    const row = await this.templateRepo.findOne({ where: { key } }).catch(() => null);
+    if (row) {
+      if (row.subject) subject = row.subject;
+      if (row.body)    body    = row.body;
+      customized = true;
+      updatedAt  = row.updatedAt?.toISOString();
+    }
 
     return { key, ...def, subject, body, customized, updatedAt };
   }
@@ -622,15 +617,16 @@ export class MailService {
   async saveTemplate(key: string, subject: string, body: string): Promise<void> {
     const defaults = this.defaultTemplates();
     if (!defaults.has(key)) throw new Error(`Unknown template key: ${key}`);
-    await this.firebase.firestore.doc(`${TEMPLATE_COL}/${key}`).set({
-      subject,
-      body,
-      updatedAt: new Date().toISOString(),
-    });
+    const existing = await this.templateRepo.findOne({ where: { key } });
+    if (existing) {
+      await this.templateRepo.update(existing.id, { subject, body });
+    } else {
+      await this.templateRepo.save(this.templateRepo.create({ key, subject, body }));
+    }
   }
 
   async resetTemplate(key: string): Promise<void> {
-    await this.firebase.firestore.doc(`${TEMPLATE_COL}/${key}`).delete();
+    await this.templateRepo.delete({ key });
   }
 
   // ─── General inscriptions ──────────────────────────────────────────────────

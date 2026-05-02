@@ -1,51 +1,51 @@
 import { Injectable } from '@nestjs/common';
-import { FirestoreRepository } from '../firebase/firestore.repository';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Annonce } from '../database/entities/annonce.entity';
+import { Inscription } from '../database/entities/inscription.entity';
+import { MarathonInscription } from '../database/entities/marathon-inscription.entity';
 import { MailService } from '../mail/mail.service';
 import { CreateAnnonceDto } from './dto/create-annonce.dto';
 
 @Injectable()
 export class AnnoncesService {
   constructor(
-    private readonly repo: FirestoreRepository,
+    @InjectRepository(Annonce) private repo: Repository<Annonce>,
+    @InjectRepository(Inscription) private inscRepo: Repository<Inscription>,
+    @InjectRepository(MarathonInscription) private marathonInscRepo: Repository<MarathonInscription>,
     private mail: MailService,
   ) {}
 
   async create(dto: CreateAnnonceDto) {
-    const doc = await this.repo.add('annonces', {
+    const saved = await this.repo.save(this.repo.create({
       titre: dto.titre,
       contenu: dto.contenu,
       publiee: dto.publiee ?? false,
-      createdAt: new Date().toISOString(),
-    });
+    }));
 
     if (dto.envoyerEmail) {
-      const inscritsSnap = await this.repo.collection('inscriptions').get();
-      const emails = [
-        ...new Set(inscritsSnap.docs.map((d) => d.data().email as string)),
-      ];
+      const [inscs, marathonInscs] = await Promise.all([
+        this.inscRepo.find({ select: ['email'] }),
+        this.marathonInscRepo.find({ select: ['email'] }),
+      ]);
+      const emails = [...new Set([...inscs, ...marathonInscs].map(i => i.email))];
       await this.mail.sendAnnonce(emails, dto.titre, dto.contenu);
     }
 
-    return { id: doc.id, message: 'Annonce créée' };
+    return { id: saved.id, message: 'Annonce créée' };
   }
 
   async findAll(publieeOnly = false) {
-    let query: FirebaseFirestore.Query = this.repo.collection('annonces');
-    if (publieeOnly) query = query.where('publiee', '==', true);
-    const snap = await query.orderBy('createdAt', 'desc').get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return this.repo.find({ where: publieeOnly ? { publiee: true } : {}, order: { createdAt: 'DESC' } });
   }
 
-  async update(id: string, data: Partial<CreateAnnonceDto>) {
-    await this.repo.update('annonces', id, {
-      ...data,
-      updatedAt: new Date().toISOString(),
-    });
+  async update(id: string, dto: Partial<CreateAnnonceDto>) {
+    await this.repo.update(id, { titre: dto.titre, contenu: dto.contenu, publiee: dto.publiee });
     return { message: 'Annonce mise à jour' };
   }
 
   async remove(id: string) {
-    await this.repo.remove('annonces', id);
+    await this.repo.delete(id);
     return { message: 'Annonce supprimée' };
   }
 }

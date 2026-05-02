@@ -1,49 +1,37 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Temoignage } from '../database/entities/temoignage.entity';
 import { CreateTemoignageDto } from './dto/create-temoignage.dto';
 
 export type StatutTemoignage = 'EN_ATTENTE' | 'APPROUVE' | 'REJETE';
 
 @Injectable()
 export class TemoignagesService {
-  constructor(private firebase: FirebaseService) {}
+  constructor(@InjectRepository(Temoignage) private repo: Repository<Temoignage>) {}
 
   async create(dto: CreateTemoignageDto) {
-    const doc = await this.firebase.firestore.collection('temoignages').add({
-      ...dto,
-      statut: 'EN_ATTENTE' as StatutTemoignage,
-      createdAt: new Date().toISOString(),
-    });
-    return { id: doc.id, message: 'Témoignage soumis, en attente de modération' };
+    const saved = await this.repo.save(this.repo.create({ ...dto, statut: 'EN_ATTENTE' }));
+    return { id: saved.id, message: 'Témoignage soumis, en attente de modération' };
   }
 
-  // Public : uniquement approuvés
   async findApprouves() {
-    const snap = await this.firebase.firestore
-      .collection('temoignages')
-      .where('statut', '==', 'APPROUVE')
-      .orderBy('createdAt', 'desc')
-      .get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return this.repo.find({ where: { statut: 'APPROUVE' }, order: { createdAt: 'DESC' } });
   }
 
-  // Admin : tous
   async findAll(statut?: StatutTemoignage) {
-    let query: FirebaseFirestore.Query = this.firebase.firestore.collection('temoignages');
-    if (statut) query = query.where('statut', '==', statut);
-    const snap = await query.orderBy('createdAt', 'desc').get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return this.repo.find({ where: statut ? { statut } : {}, order: { createdAt: 'DESC' } });
   }
 
   async moderer(id: string, statut: StatutTemoignage) {
-    const doc = await this.firebase.firestore.collection('temoignages').doc(id).get();
-    if (!doc.exists) throw new NotFoundException('Témoignage introuvable');
-    await doc.ref.update({ statut, moderéAt: new Date().toISOString() });
+    const t = await this.repo.findOne({ where: { id } });
+    if (!t) throw new NotFoundException('Témoignage introuvable');
+    await this.repo.update(id, { statut });
     return { message: `Témoignage ${statut.toLowerCase()}` };
   }
 
   async remove(id: string) {
-    await this.firebase.firestore.collection('temoignages').doc(id).delete();
+    await this.repo.delete(id);
     return { message: 'Témoignage supprimé' };
   }
 }

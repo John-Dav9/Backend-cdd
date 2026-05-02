@@ -1,71 +1,51 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Bibliotheque } from '../database/entities/bibliotheque.entity';
+import { StorageService } from '../storage/storage.service';
 import { CreateLivreDto } from './dto/create-livre.dto';
+
+type UploadFile = { originalname: string; mimetype: string; buffer: Buffer };
 
 @Injectable()
 export class BibliothequeService {
-  constructor(private firebase: FirebaseService) {}
+  constructor(
+    @InjectRepository(Bibliotheque) private repo: Repository<Bibliotheque>,
+    private storage: StorageService,
+  ) {}
 
-  async create(
-    dto: CreateLivreDto,
-    pdfFile: Express.Multer.File,
-    coverFile?: Express.Multer.File,
-  ) {
-    const bucket = this.firebase.storage.bucket();
-    const timestamp = Date.now();
+  async create(dto: CreateLivreDto, pdfFile: UploadFile, coverFile?: UploadFile) {
+    const ts      = Date.now();
+    const pdfPath = `bibliotheque/${ts}_${pdfFile.originalname}`;
+    const pdfUrl  = await this.storage.upload(pdfPath, pdfFile.buffer, 'application/pdf');
 
-    // Upload PDF
-    const pdfPath = `bibliotheque/${timestamp}_${pdfFile.originalname}`;
-    const pdfRef = bucket.file(pdfPath);
-    await pdfRef.save(pdfFile.buffer, { contentType: 'application/pdf' });
-    await pdfRef.makePublic();
-    const pdfUrl = pdfRef.publicUrl();
-
-    // Upload couverture (optionnel)
-    let coverUrl: string | null = null;
+    let coverUrl: string | undefined;
+    let coverPath: string | undefined;
     if (coverFile) {
-      const coverPath = `bibliotheque/covers/${timestamp}_${coverFile.originalname}`;
-      const coverRef = bucket.file(coverPath);
-      await coverRef.save(coverFile.buffer, { contentType: coverFile.mimetype });
-      await coverRef.makePublic();
-      coverUrl = coverRef.publicUrl();
+      coverPath = `bibliotheque/covers/${ts}_${coverFile.originalname}`;
+      coverUrl  = await this.storage.upload(coverPath, coverFile.buffer, coverFile.mimetype);
     }
 
-    const doc = await this.firebase.firestore.collection('bibliotheque').add({
-      ...dto,
-      pdfUrl,
-      coverUrl,
-      pdfPath,
-      createdAt: new Date().toISOString(),
-    });
-
-    return { id: doc.id, pdfUrl, coverUrl, message: 'Livre ajouté' };
+    const saved = await this.repo.save(this.repo.create({ ...dto, pdfUrl, pdfPath, coverUrl, coverPath }));
+    return { id: saved.id, pdfUrl, coverUrl, message: 'Livre ajouté' };
   }
 
   async findAll() {
-    const snap = await this.firebase.firestore
-      .collection('bibliotheque')
-      .orderBy('createdAt', 'desc')
-      .get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return this.repo.find({ order: { createdAt: 'DESC' } });
   }
 
   async findOne(id: string) {
-    const doc = await this.firebase.firestore.collection('bibliotheque').doc(id).get();
-    if (!doc.exists) throw new NotFoundException('Livre introuvable');
-    return { id: doc.id, ...doc.data() };
+    const b = await this.repo.findOne({ where: { id } });
+    if (!b) throw new NotFoundException('Livre introuvable');
+    return b;
   }
 
   async remove(id: string) {
-    const doc = await this.firebase.firestore.collection('bibliotheque').doc(id).get();
-    if (!doc.exists) throw new NotFoundException('Livre introuvable');
-
-    const data = doc.data();
-    if (data?.pdfPath) {
-      await this.firebase.storage.bucket().file(data.pdfPath).delete().catch(() => null);
-    }
-
-    await this.firebase.firestore.collection('bibliotheque').doc(id).delete();
+    const b = await this.repo.findOne({ where: { id } });
+    if (!b) throw new NotFoundException('Livre introuvable');
+    if (b.pdfPath)   await this.storage.delete(b.pdfPath);
+    if (b.coverPath) await this.storage.delete(b.coverPath);
+    await this.repo.delete(id);
     return { message: 'Livre supprimé' };
   }
 }

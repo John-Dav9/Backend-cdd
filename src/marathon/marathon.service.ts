@@ -1,39 +1,39 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { FirebaseService } from '../firebase/firebase.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { Marathon } from '../database/entities/marathon.entity';
+import { MarathonInscription } from '../database/entities/marathon-inscription.entity';
 import { MailService } from '../mail/mail.service';
+import { BIBLE_BOOK_MAP, AT_BOOKS, BIBLE_BOOKS, NT_BOOKS } from './bible-books.data';
 import { CreateMarathonDto, MarathonScope, MarathonStatut } from './dto/create-marathon.dto';
 import { InscrireMarathonDto } from './dto/inscrire-marathon.dto';
 import { UpdateProgressionDto } from './dto/update-progression.dto';
-import { BIBLE_BOOKS, AT_BOOKS, NT_BOOKS, BIBLE_BOOK_MAP } from './bible-books.data';
 import { generateReadingPlan } from './reading-plan.generator';
-import * as admin from 'firebase-admin';
+import { StorageService } from '../storage/storage.service';
 
 const MILESTONES = [25, 50, 75, 100];
 
 @Injectable()
 export class MarathonService {
   private readonly logger = new Logger(MarathonService.name);
-  private readonly col     = 'marathons';
-  private readonly inscCol = 'marathon_inscriptions';
 
   constructor(
-    private firebase: FirebaseService,
+    @InjectRepository(Marathon) private marathonRepo: Repository<Marathon>,
+    @InjectRepository(MarathonInscription) private inscRepo: Repository<MarathonInscription>,
     private mail: MailService,
+    private storage: StorageService,
+    private dataSource: DataSource,
   ) {}
-
-  private assertReady() {
-    if (!this.firebase.isReady) {
-      throw new ServiceUnavailableException(
-        'Firebase non configur\u00e9 \u2014 ajoutez vos identifiants Firebase dans le fichier .env du backend.',
-      );
-    }
-  }
 
   // ─── Admin : CRUD ────────────────────────────────────────────────────────────
 
   async creer(dto: CreateMarathonDto) {
-    this.assertReady();
     const dateDebut = new Date(dto.dateDebut);
     const dateFin   = new Date(dto.dateFin);
 
@@ -42,54 +42,45 @@ export class MarathonService {
     }
 
     const nbJours = Math.round((dateFin.getTime() - dateDebut.getTime()) / 86_400_000) + 1;
-
-    const books = this.resolveBooks(dto.scope, dto.livresChoisis);
-    if (!books.length) {
-      throw new BadRequestException('Aucun livre trouvé pour ce scope.');
-    }
+    const books   = this.resolveBooks(dto.scope, dto.livresChoisis);
+    if (!books.length) throw new BadRequestException('Aucun livre trouvé pour ce scope.');
 
     const planLecture = generateReadingPlan(books, nbJours, dateDebut);
-
-    const now    = admin.firestore.FieldValue.serverTimestamp();
     const statut = dateDebut <= new Date() ? MarathonStatut.ACTIF : MarathonStatut.PLANIFIE;
 
-    const docRef = await this.firebase.firestore.collection(this.col).add({
+    const marathon = this.marathonRepo.create({
       titre: dto.titre,
       description: dto.description ?? '',
       dateDebut: dto.dateDebut,
-      dateFin:   dto.dateFin,
-      scope:     dto.scope,
+      dateFin: dto.dateFin,
+      scope: dto.scope,
       livresChoisis: dto.livresChoisis ?? [],
       nbJours,
       statut,
       planLecture,
       nbInscrits: 0,
-      createdAt: now,
     });
 
-    // Newsletter aux anciens participants (fire-and-forget)
-    this.sendNewsletterToAllParticipants(docRef.id, {
+    const saved = await this.marathonRepo.save(marathon);
+
+    this.sendNewsletterToAllParticipants(saved.id, {
       titre: dto.titre,
       description: dto.description ?? '',
       dateDebut: dto.dateDebut,
       dateFin: dto.dateFin,
-      flyerUrl: (dto as any).flyerUrl ?? null,
+      flyerUrl: null,
     }).catch(err => this.logger.error('Newsletter nouveau marathon', err));
 
-    return { id: docRef.id, nbJours, nbChapitres: planLecture.length };
+    return { id: saved.id, nbJours, nbChapitres: planLecture.length };
   }
 
   private async sendNewsletterToAllParticipants(newMarathonId: string, marathon: {
     titre: string; description: string; dateDebut: string; dateFin: string; flyerUrl?: string | null;
   }) {
-    const snap = await this.firebase.firestore.collection(this.inscCol).get();
+    const inscs = await this.inscRepo.find({ select: ['email', 'marathonId'] });
     const emails = new Set<string>();
-    snap.docs.forEach(d => {
-      const data = d.data();
-      if (data['email'] && data['marathonId'] !== newMarathonId) {
-        emails.add(data['email']);
-      }
-    });
+    inscs.forEach(i => { if (i.marathonId !== newMarathonId) emails.add(i.email); });
+
     for (const email of emails) {
       await this.mail.sendNewsletterNouveauMarathon(email, marathon).catch(
         err => this.logger.error('Newsletter email failed', err),
@@ -99,129 +90,82 @@ export class MarathonService {
 
   async uploadFlyer(id: string, file: { originalname: string; mimetype: string; buffer: Buffer }) {
     await this.getOrFail(id);
-    const bucket = this.firebase.storage.bucket();
     const path = `marathons/${id}/flyer_${Date.now()}_${file.originalname}`;
-    const ref = bucket.file(path);
-    await ref.save(file.buffer, { contentType: file.mimetype });
-    await ref.makePublic();
-    const url = ref.publicUrl();
-    await this.firebase.firestore.collection(this.col).doc(id).update({ flyerUrl: url });
+    const url  = await this.storage.upload(path, file.buffer, file.mimetype);
+    await this.marathonRepo.update(id, { flyerUrl: url });
     return { flyerUrl: url };
   }
 
   async findAll(adminMode = false) {
-    this.assertReady();
-    let query: FirebaseFirestore.Query = this.firebase.firestore.collection(this.col);
-
     if (adminMode) {
-      query = query.orderBy('dateDebut', 'desc');
-      const snap = await query.get();
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return this.marathonRepo.find({ order: { dateDebut: 'DESC' } });
     }
-
-    // Public : filtre en mémoire pour éviter un index composite Firestore
-    query = query.where('statut', 'in', [MarathonStatut.PLANIFIE, MarathonStatut.ACTIF]);
-    const snap = await query.get();
-    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-    docs.sort((a, b) => (a.dateDebut > b.dateDebut ? -1 : 1));
-    return docs;
+    const all = await this.marathonRepo.find();
+    return all
+      .filter(m => m.statut === MarathonStatut.PLANIFIE || m.statut === MarathonStatut.ACTIF)
+      .sort((a, b) => (a.dateDebut > b.dateDebut ? -1 : 1));
   }
 
   async findOne(id: string) {
-    const doc = await this.firebase.firestore.collection(this.col).doc(id).get();
-    if (!doc.exists) throw new NotFoundException('Marathon introuvable.');
-    return { id: doc.id, ...doc.data() };
+    const m = await this.marathonRepo.findOne({ where: { id } });
+    if (!m) throw new NotFoundException('Marathon introuvable.');
+    return m;
   }
 
   async archiver(id: string) {
     await this.getOrFail(id);
-    await this.firebase.firestore.collection(this.col).doc(id).update({
-      statut: MarathonStatut.ARCHIVE,
-    });
+    await this.marathonRepo.update(id, { statut: MarathonStatut.ARCHIVE });
     return { success: true };
   }
 
   async reactiver(id: string) {
     await this.getOrFail(id);
-    await this.firebase.firestore.collection(this.col).doc(id).update({
-      statut: MarathonStatut.ACTIF,
-    });
+    await this.marathonRepo.update(id, { statut: MarathonStatut.ACTIF });
     return { success: true };
-  }
-
-  async findOrphaned() {
-    this.assertReady();
-    const inscSnap = await this.firebase.firestore.collection(this.inscCol).get();
-    const marathonIds = [...new Set(inscSnap.docs.map(d => d.data()['marathonId'] as string))];
-
-    const docs = await Promise.all(
-      marathonIds.map(id => this.firebase.firestore.collection(this.col).doc(id).get()),
-    );
-
-    const orphaned: any[] = [];
-    for (let i = 0; i < docs.length; i++) {
-      if (!docs[i].exists) {
-        const count = inscSnap.docs.filter(d => d.data()['marathonId'] === marathonIds[i]).length;
-        orphaned.push({ id: marathonIds[i], titre: 'Marathon supprimé', statut: 'SUPPRIME', nbInscrits: count });
-      }
-    }
-    return orphaned;
   }
 
   async supprimer(id: string) {
     await this.getOrFail(id);
-    await this.firebase.firestore.collection(this.col).doc(id).delete();
+    await this.marathonRepo.delete(id);
     return { success: true };
   }
 
-  // ─── Cron : archivage automatique à minuit ────────────────────────────────
+  // ─── Cron : archivage automatique ─────────────────────────────────────────
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async archiverExpires() {
-    const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
-    const snap = await this.firebase.firestore
-      .collection(this.col)
-      .where('statut', '==', MarathonStatut.ACTIF)
-      .where('dateFin', '<', today)
-      .get();
+    const today = new Date().toISOString().split('T')[0];
+    const result = await this.marathonRepo
+      .createQueryBuilder()
+      .update(Marathon)
+      .set({ statut: MarathonStatut.ARCHIVE })
+      .where('statut = :s', { s: MarathonStatut.ACTIF })
+      .andWhere('date_fin < :today', { today })
+      .execute();
 
-    const batch = this.firebase.firestore.batch();
-    snap.docs.forEach(d => batch.update(d.ref, { statut: MarathonStatut.ARCHIVE }));
-    await batch.commit();
-
-    if (snap.size > 0) {
-      this.logger.log(`${snap.size} marathon(s) archivé(s) automatiquement.`);
+    if (result.affected && result.affected > 0) {
+      this.logger.log(`${result.affected} marathon(s) archivé(s) automatiquement.`);
     }
   }
 
-  // ─── Cron : rappels de lecture quotidiens ─────────────────────────────────
+  // ─── Cron : rappels de lecture ─────────────────────────────────────────────
 
   @Cron('0 9 * * *')
   async envoyerRappelsLecture() {
     const todayMs = Date.now();
-    const marathonsSnap = await this.firebase.firestore
-      .collection(this.col)
-      .where('statut', '==', MarathonStatut.ACTIF)
-      .get();
+    const marathons = await this.marathonRepo.find({ where: { statut: MarathonStatut.ACTIF } });
 
-    for (const marathonDoc of marathonsSnap.docs) {
-      const marathon = { id: marathonDoc.id, ...marathonDoc.data() };
-      const inscrSnap = await this.firebase.firestore
-        .collection(this.inscCol)
-        .where('marathonId', '==', marathonDoc.id)
-        .get();
+    for (const marathon of marathons) {
+      const inscs = await this.inscRepo.find({ where: { marathonId: marathon.id } });
 
-      for (const inscDoc of inscrSnap.docs) {
-        const insc = inscDoc.data();
-        if ((insc['progressPercent'] ?? 0) >= 100) continue;
-        const lastActivity = insc['lastActivityAt'] as string | null;
-        if (!lastActivity) continue;
+      for (const insc of inscs) {
+        if (Number(insc.progressPercent) >= 100) continue;
+        if (!insc.lastActivityAt) continue;
 
-        const daysSince = (todayMs - new Date(lastActivity).getTime()) / 86_400_000;
-        // Envoyer un rappel exactement quand l'inactivité atteint 3 jours (fenêtre de ±12h)
+        const daysSince = (todayMs - new Date(insc.lastActivityAt).getTime()) / 86_400_000;
         if (daysSince >= 3 && daysSince < 4) {
           await this.mail.sendRappelLecture(
-            insc['email'], insc['fullName'], marathon, Math.floor(daysSince), insc['progressPercent'] ?? 0,
+            insc.email, insc.fullName, marathon, Math.floor(daysSince), Number(insc.progressPercent),
           ).catch((err: any) => this.logger.error('Rappel lecture', err));
         }
       }
@@ -237,37 +181,24 @@ export class MarathonService {
       throw new BadRequestException('Ce marathon est archivé.');
     }
 
-    // Vérifier doublon
-    const existing = await this.firebase.firestore
-      .collection(this.inscCol)
-      .where('marathonId', '==', marathonId)
-      .where('email', '==', dto.email.toLowerCase())
-      .limit(1)
-      .get();
+    const existing = await this.inscRepo.findOne({
+      where: { marathonId, email: dto.email.toLowerCase() },
+    });
+    if (existing) throw new BadRequestException('Vous êtes déjà inscrit à ce marathon.');
 
-    if (!existing.empty) {
-      throw new BadRequestException('Vous êtes déjà inscrit à ce marathon.');
-    }
-
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    await this.firebase.firestore.collection(this.inscCol).add({
+    await this.inscRepo.save({
       marathonId,
       fullName: dto.fullName,
       email: dto.email.toLowerCase(),
       phone: dto.phone ?? '',
-      city:  dto.city  ?? '',
+      city: dto.city ?? '',
       progress: {},
       progressPercent: 0,
       milestonesReached: [],
-      createdAt: now,
     });
 
-    // Incrémenter le compteur (temps réel)
-    await this.firebase.firestore.collection(this.col).doc(marathonId).update({
-      nbInscrits: admin.firestore.FieldValue.increment(1),
-    });
+    await this.marathonRepo.increment({ id: marathonId }, 'nbInscrits', 1);
 
-    // Email de bienvenue
     await this.mail.sendBienvenueMarathon(dto.email, dto.fullName, marathon).catch(
       err => this.logger.error('Mail bienvenue marathon', err),
     );
@@ -279,112 +210,92 @@ export class MarathonService {
 
   async mettreAJourProgression(marathonId: string, dto: UpdateProgressionDto) {
     const marathon = await this.getOrFail(marathonId);
-
-    const snap = await this.firebase.firestore
-      .collection(this.inscCol)
-      .where('marathonId', '==', marathonId)
-      .where('email', '==', dto.email.toLowerCase())
-      .limit(1)
-      .get();
-
-    if (snap.empty) throw new NotFoundException('Inscription introuvable.');
-
-    const inscRef      = snap.docs[0].ref;
-    const originalData = snap.docs[0].data();
+    const email    = dto.email.toLowerCase();
 
     let resultPercent    = 0;
     let resultMilestones: number[] = [];
     let newMilestones:    number[] = [];
+    let inscFullName     = '';
 
-    // Transaction atomique : évite les conditions de course sur les checkboxes rapides
-    await this.firebase.firestore.runTransaction(async (t) => {
-      const inscDoc = await t.get(inscRef);
-      const inscData = inscDoc.data()!;
-      const progress: Record<string, boolean> = { ...(inscData.progress ?? {}) };
+    await this.dataSource.transaction(async (manager) => {
+      const insc = await manager.findOne(MarathonInscription, {
+        where: { marathonId, email },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!insc) throw new NotFoundException('Inscription introuvable.');
 
+      inscFullName = insc.fullName;
+      const progress = { ...(insc.progress ?? {}) };
       progress[String(dto.day)] = dto.checked;
 
-      const totalDays = (marathon as any).nbJours as number;
-      const doneCount = Object.values(progress).filter(Boolean).length;
-      resultPercent   = totalDays > 0 ? Math.round((doneCount / totalDays) * 100) : 0;
-
-      resultMilestones = [...(inscData.milestonesReached ?? [])];
-      newMilestones    = MILESTONES.filter(
-        m => resultPercent >= m && !resultMilestones.includes(m),
-      );
+      const doneCount   = Object.values(progress).filter(Boolean).length;
+      resultPercent     = marathon.nbJours > 0 ? Math.round((doneCount / marathon.nbJours) * 100) : 0;
+      resultMilestones  = [...(insc.milestonesReached ?? [])];
+      newMilestones     = MILESTONES.filter(m => resultPercent >= m && !resultMilestones.includes(m));
       resultMilestones.push(...newMilestones);
 
-      // Streak calculation
-      const todayStr = new Date().toISOString().split('T')[0];
-      let currentStreak: number = (inscData['currentStreak'] as number) ?? 0;
-      let maxStreak: number     = (inscData['maxStreak']     as number) ?? 0;
-      const lastActivityAt      = inscData['lastActivityAt'] as string | null;
-      let streakUpdate: Record<string, any> = {};
+      const todayStr    = new Date().toISOString().split('T')[0];
+      let currentStreak = insc.currentStreak ?? 0;
+      let maxStreak     = insc.maxStreak ?? 0;
+      const streakUpdate: Partial<MarathonInscription> = {};
 
       if (dto.checked) {
-        const yesterday = new Date();
+        const yesterday    = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-        if (lastActivityAt === todayStr) {
-          // Already read today — no change
-        } else if (lastActivityAt === yesterdayStr) {
+        if (insc.lastActivityAt === todayStr) {
+          // déjà lu aujourd'hui
+        } else if (insc.lastActivityAt === yesterdayStr) {
           currentStreak += 1;
         } else {
           currentStreak = 1;
         }
         maxStreak = Math.max(currentStreak, maxStreak);
-        streakUpdate = { currentStreak, maxStreak, lastActivityAt: todayStr };
+        streakUpdate.currentStreak  = currentStreak;
+        streakUpdate.maxStreak      = maxStreak;
+        streakUpdate.lastActivityAt = todayStr;
       }
 
-      t.update(inscRef, { progress, progressPercent: resultPercent, milestonesReached: resultMilestones, ...streakUpdate });
+      await manager.update(MarathonInscription, insc.id, {
+        progress,
+        progressPercent: resultPercent,
+        milestonesReached: resultMilestones,
+        ...streakUpdate,
+      });
     });
 
-    // Envoi des emails hors transaction (les opérations async ne sont pas autorisées dedans)
     for (const milestone of newMilestones) {
       if (milestone < 100) {
         await this.mail
-          .sendEncouragementMarathon(dto.email, originalData.fullName, marathon, milestone)
-          .catch(err => this.logger.error('Mail encouragement marathon', err));
+          .sendEncouragementMarathon(dto.email, inscFullName, marathon, milestone)
+          .catch(err => this.logger.error('Mail encouragement', err));
       } else {
-        // Calculer le rang final pour l'attestation
-        const allSnap = await this.firebase.firestore
-          .collection(this.inscCol)
-          .where('marathonId', '==', marathonId)
-          .get();
-        const sorted = allSnap.docs
-          .map(d => d.data())
-          .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0));
-        const rank             = sorted.findIndex(d => d['email'] === dto.email.toLowerCase()) + 1;
-        const totalParticipants = allSnap.size;
-
+        const all    = await this.inscRepo.find({ where: { marathonId } });
+        const sorted = all.sort((a, b) => Number(b.progressPercent) - Number(a.progressPercent));
+        const rank   = sorted.findIndex(i => i.email === email) + 1;
         await this.mail
-          .sendAttestationMarathon(dto.email, originalData.fullName, marathon, rank, totalParticipants)
-          .catch(err => this.logger.error('Mail attestation marathon', err));
+          .sendAttestationMarathon(dto.email, inscFullName, marathon, rank, all.length)
+          .catch(err => this.logger.error('Mail attestation', err));
       }
     }
 
     return { percent: resultPercent, milestonesReached: resultMilestones };
   }
 
-  // ─── Leaderboard public ───────────────────────────────────────────────────
+  // ─── Leaderboard ──────────────────────────────────────────────────────────
 
   async getLeaderboard(marathonId: string) {
-    const snap = await this.firebase.firestore
-      .collection(this.inscCol)
-      .where('marathonId', '==', marathonId)
-      .get();
-
-    return snap.docs
-      .map(d => d.data())
-      .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0))
+    const inscs = await this.inscRepo.find({ where: { marathonId } });
+    return inscs
+      .sort((a, b) => Number(b.progressPercent) - Number(a.progressPercent))
       .map((d, i) => ({
-        rank:             i + 1,
-        name:             this.anonymizeName(d['fullName'] ?? ''),
-        progressPercent:  d['progressPercent'] ?? 0,
-        milestonesReached: d['milestonesReached'] ?? [],
-        currentStreak:    d['currentStreak'] ?? 0,
-        maxStreak:        d['maxStreak'] ?? 0,
+        rank: i + 1,
+        name: this.anonymizeName(d.fullName),
+        progressPercent: Number(d.progressPercent),
+        milestonesReached: d.milestonesReached,
+        currentStreak: d.currentStreak,
+        maxStreak: d.maxStreak,
       }));
   }
 
@@ -396,118 +307,84 @@ export class MarathonService {
 
   async getProgression(marathonId: string, email: string) {
     await this.getOrFail(marathonId);
+    const insc = await this.inscRepo.findOne({ where: { marathonId, email: email.toLowerCase() } });
+    if (!insc) return null;
 
-    const snap = await this.firebase.firestore
-      .collection(this.inscCol)
-      .where('marathonId', '==', marathonId)
-      .where('email', '==', email.toLowerCase())
-      .limit(1)
-      .get();
-
-    if (snap.empty) return null;
-
-    const data = snap.docs[0].data();
-
-    // Calcul du rang — tri en mémoire pour éviter l'index composite Firestore
-    const allSnap = await this.firebase.firestore
-      .collection(this.inscCol)
-      .where('marathonId', '==', marathonId)
-      .get();
-
-    const sorted = allSnap.docs
-      .map(d => d.data())
-      .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0));
-    const rank = sorted.findIndex(d => d['email'] === email.toLowerCase()) + 1;
-    const totalParticipants = allSnap.size;
+    const all    = await this.inscRepo.find({ where: { marathonId } });
+    const sorted = all.sort((a, b) => Number(b.progressPercent) - Number(a.progressPercent));
+    const rank   = sorted.findIndex(i => i.email === email.toLowerCase()) + 1;
 
     return {
-      fullName:          data.fullName,
-      progress:          data.progress,
-      progressPercent:   data.progressPercent,
-      milestonesReached: data.milestonesReached,
-      currentStreak:     data.currentStreak ?? 0,
-      maxStreak:         data.maxStreak ?? 0,
-      lastActivityAt:    data.lastActivityAt ?? null,
+      fullName:          insc.fullName,
+      progress:          insc.progress,
+      progressPercent:   Number(insc.progressPercent),
+      milestonesReached: insc.milestonesReached,
+      currentStreak:     insc.currentStreak,
+      maxStreak:         insc.maxStreak,
+      lastActivityAt:    insc.lastActivityAt,
       rank,
-      totalParticipants,
+      totalParticipants: all.length,
     };
   }
 
   async getInscrits(marathonId: string) {
-    const snap = await this.firebase.firestore
-      .collection(this.inscCol)
-      .where('marathonId', '==', marathonId)
-      .get();
-
-    return snap.docs
-      .map(d => ({ id: d.id, ...d.data() } as any))
-      .sort((a, b) => (b.progressPercent ?? 0) - (a.progressPercent ?? 0))
+    const inscs = await this.inscRepo.find({ where: { marathonId } });
+    return inscs
+      .sort((a, b) => Number(b.progressPercent) - Number(a.progressPercent))
       .map((d, i) => ({
         id: d.id,
         rank: i + 1,
         fullName: d.fullName,
         email: d.email,
-        progressPercent: d.progressPercent,
+        progressPercent: Number(d.progressPercent),
         milestonesReached: d.milestonesReached,
-        currentStreak: d.currentStreak ?? 0,
-        maxStreak: d.maxStreak ?? 0,
-        lastActivityAt: d.lastActivityAt ?? null,
+        currentStreak: d.currentStreak,
+        maxStreak: d.maxStreak,
+        lastActivityAt: d.lastActivityAt,
         createdAt: d.createdAt,
       }));
   }
 
-  // ─── Attestation annuelle (déclenchée par l'admin) ────────────────────────
-
   async envoyerAttestationsAnnuelles(annee: number) {
-    // Récupérer tous les marathons archivés de l'année
     const debut = `${annee}-01-01`;
     const fin   = `${annee}-12-31`;
 
-    const marathonsSnap = await this.firebase.firestore
-      .collection(this.col)
-      .where('dateDebut', '>=', debut)
-      .where('dateDebut', '<=', fin)
-      .get();
+    const marathons = await this.marathonRepo
+      .createQueryBuilder('m')
+      .where('m.date_debut >= :debut', { debut })
+      .andWhere('m.date_debut <= :fin', { fin })
+      .getMany();
 
-    const marathonIds = marathonsSnap.docs.map(d => d.id);
-    if (marathonIds.length === 0) return { envoyes: 0 };
+    if (!marathons.length) return { envoyes: 0 };
 
-    // Trouver les participants ayant complété 100% sur TOUS les marathons de l'année
     const emailCounts = new Map<string, { count: number; fullName: string }>();
 
-    for (const mId of marathonIds) {
-      const snap = await this.firebase.firestore
-        .collection(this.inscCol)
-        .where('marathonId', '==', mId)
-        .where('progressPercent', '==', 100)
-        .get();
-
-      snap.docs.forEach(d => {
-        const { email, fullName } = d.data();
-        const cur = emailCounts.get(email) ?? { count: 0, fullName };
-        emailCounts.set(email, { count: cur.count + 1, fullName });
+    for (const m of marathons) {
+      const inscs = await this.inscRepo.find({ where: { marathonId: m.id } });
+      inscs.filter(i => Number(i.progressPercent) === 100).forEach(i => {
+        const cur = emailCounts.get(i.email) ?? { count: 0, fullName: i.fullName };
+        emailCounts.set(i.email, { count: cur.count + 1, fullName: i.fullName });
       });
     }
 
     let envoyes = 0;
     for (const [email, { count, fullName }] of emailCounts) {
-      if (count === marathonIds.length) {
-        await this.mail
-          .sendAttestationAnnuelle(email, fullName, annee, count)
+      if (count === marathons.length) {
+        await this.mail.sendAttestationAnnuelle(email, fullName, annee, count)
           .catch(err => this.logger.error('Mail attestation annuelle', err));
         envoyes++;
       }
     }
 
-    return { envoyes, totalMarathons: marathonIds.length };
+    return { envoyes, totalMarathons: marathons.length };
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  private async getOrFail(id: string) {
-    const doc = await this.firebase.firestore.collection(this.col).doc(id).get();
-    if (!doc.exists) throw new NotFoundException('Marathon introuvable.');
-    return { id: doc.id, ...doc.data() } as any;
+  private async getOrFail(id: string): Promise<Marathon> {
+    const m = await this.marathonRepo.findOne({ where: { id } });
+    if (!m) throw new NotFoundException('Marathon introuvable.');
+    return m;
   }
 
   private resolveBooks(scope: MarathonScope, livresChoisis?: string[]) {
@@ -515,12 +392,8 @@ export class MarathonService {
       case MarathonScope.BIBLE_COMPLETE:    return BIBLE_BOOKS;
       case MarathonScope.ANCIEN_TESTAMENT:  return AT_BOOKS;
       case MarathonScope.NOUVEAU_TESTAMENT: return NT_BOOKS;
-      case MarathonScope.LIVRES_CHOISIS: {
-        if (!livresChoisis?.length) return [];
-        return (livresChoisis ?? [])
-          .map(id => BIBLE_BOOK_MAP.get(id))
-          .filter(Boolean) as typeof BIBLE_BOOKS;
-      }
+      case MarathonScope.LIVRES_CHOISIS:
+        return (livresChoisis ?? []).map(id => BIBLE_BOOK_MAP.get(id)).filter(Boolean) as typeof BIBLE_BOOKS;
     }
   }
 }

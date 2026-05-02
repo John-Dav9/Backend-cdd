@@ -1,16 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Actualite } from '../database/entities/actualite.entity';
+import { EmailTemplate } from '../database/entities/email-template.entity';
+import { Inscription } from '../database/entities/inscription.entity';
+import { MarathonInscription } from '../database/entities/marathon-inscription.entity';
+import { Setting } from '../database/entities/setting.entity';
 import { MailService } from '../mail/mail.service';
+import { StorageService } from '../storage/storage.service';
 
-const THEME_DOC        = 'settings/theme';
-const NEXT_CULTE_DOC   = 'settings/next_culte';
-const PAGE_DOC = (id: string) => `settings/page_${id}`;
-
-type UploadedFile = {
-  originalname: string;
-  mimetype: string;
-  buffer: Buffer;
-};
+type UploadedFile = { originalname: string; mimetype: string; buffer: Buffer };
 
 export const DEFAULT_CULTES = [
   { id: '1', jour: 'DU LUNDI AU VENDREDI', heure: '12H30 – 13H30', description: 'PRIÈRE EN LIGNE' },
@@ -20,17 +19,9 @@ export const DEFAULT_CULTES = [
 ];
 
 export const DEFAULT_THEME = {
-  brand: '#1D546C',
-  brandSecondary: '#1A3D64',
-  cta: '#0C2B4E',
-  accent: '#00B7B5',
-  primaryBg: '#F4F4F4',
-  surface: '#FFFFFF',
-  text: '#111111',
-  muted: '#334155',
-  fontHeading: 'Lora',
-  fontBody: 'Inter',
-  logoUrl: null as string | null,
+  brand: '#1D546C', brandSecondary: '#1A3D64', cta: '#0C2B4E', accent: '#00B7B5',
+  primaryBg: '#F4F4F4', surface: '#FFFFFF', text: '#111111', muted: '#334155',
+  fontHeading: 'Lora', fontBody: 'Inter', logoUrl: null as string | null,
 };
 
 @Injectable()
@@ -38,143 +29,148 @@ export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
 
   constructor(
-    private firebase: FirebaseService,
+    @InjectRepository(Setting) private settingRepo: Repository<Setting>,
+    @InjectRepository(EmailTemplate) private templateRepo: Repository<EmailTemplate>,
+    @InjectRepository(MarathonInscription) private marathonInscRepo: Repository<MarathonInscription>,
+    @InjectRepository(Inscription) private inscRepo: Repository<Inscription>,
     private mail: MailService,
+    private storage: StorageService,
   ) {}
 
-  // ── Theme ────────────────────────────────────────────
-  async getTheme() {
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private async getSetting<T>(key: string, defaultValue: T): Promise<T> {
     try {
-      const snap = await this.firebase.firestore.doc(THEME_DOC).get();
-      return snap.exists ? { ...DEFAULT_THEME, ...snap.data() } : DEFAULT_THEME;
+      const row = await this.settingRepo.findOne({ where: { key } });
+      return row ? (row.value as T) : defaultValue;
     } catch {
-      return DEFAULT_THEME;
+      return defaultValue;
     }
   }
 
+  private async setSetting(key: string, value: any): Promise<void> {
+    await this.settingRepo.save({ key, value });
+  }
+
+  // ── Theme ────────────────────────────────────────────────────────────────
+
+  async getTheme() {
+    return this.getSetting('theme', DEFAULT_THEME);
+  }
+
   async updateTheme(data: Partial<typeof DEFAULT_THEME>) {
-    await this.firebase.firestore.doc(THEME_DOC).set(data, { merge: true });
+    const current = await this.getTheme();
+    await this.setSetting('theme', { ...current, ...data });
     return this.getTheme();
   }
 
   async uploadThemeImage(field: 'logoUrl' | 'heroImageUrl', file: UploadedFile) {
-    const bucket = this.firebase.storage.bucket();
     const path = `settings/${field}_${Date.now()}_${file.originalname}`;
-    const ref = bucket.file(path);
-    await ref.save(file.buffer, { contentType: file.mimetype });
-    await ref.makePublic();
-    const url = ref.publicUrl();
-    await this.firebase.firestore.doc(THEME_DOC).set({ [field]: url }, { merge: true });
+    const url  = await this.storage.upload(path, file.buffer, file.mimetype);
+    await this.updateTheme({ [field]: url } as any);
     return { url };
   }
 
-  // ── Cultes (service schedule) ────────────────────────
+  // ── Cultes ───────────────────────────────────────────────────────────────
+
   async getCultes() {
-    try {
-      const snap = await this.firebase.firestore.doc('settings/cultes').get();
-      return snap.exists ? (snap.data()?.items ?? DEFAULT_CULTES) : DEFAULT_CULTES;
-    } catch {
-      return DEFAULT_CULTES;
-    }
+    return this.getSetting('cultes', DEFAULT_CULTES);
   }
 
   async updateCultes(items: any[]) {
-    await this.firebase.firestore.doc('settings/cultes').set({ items });
+    await this.setSetting('cultes', items);
     return items;
   }
 
-  // ── Prochain culte présentiel ─────────────────────────
+  // ── Prochain culte ───────────────────────────────────────────────────────
+
   async getNextCulte() {
-    try {
-      const snap = await this.firebase.firestore.doc(NEXT_CULTE_DOC).get();
-      return snap.exists ? snap.data() : null;
-    } catch {
-      return null;
-    }
+    return this.getSetting<any>('next_culte', null);
   }
 
-  async updateNextCulte(data: { sujet: string; date: string; message: string }) {
-    await this.firebase.firestore.doc(NEXT_CULTE_DOC).set(data, { merge: true });
+  async updateNextCulte(data: { sujet: string; date: string; message: string }, actualiteRepo: Repository<Actualite>) {
+    await this.setSetting('next_culte', data);
 
-    // Auto-create an actualité for the culte announcement
-    await this.firebase.firestore.collection('actualites').add({
+    await actualiteRepo.save(actualiteRepo.create({
       titre: `Prochain culte en présentiel : ${data.sujet}`,
       contenu: `${data.message}\n\nDate : ${data.date}`,
       auteur: 'Administration',
       publiee: true,
       tags: ['culte', 'présentiel'],
-      imageUrl: null,
-      videoId: null,
-      createdAt: new Date().toISOString(),
-    });
+    }));
 
-    // Auto-broadcast to all registered emails (fire-and-forget)
-    this.broadcastNextCulte().catch(err =>
-      this.logger.error('Auto-broadcast culte failed', err),
-    );
-
+    this.broadcastNextCulte().catch(err => this.logger.error('Broadcast culte failed', err));
     return this.getNextCulte();
   }
 
   async uploadNextCulteFlyer(file: UploadedFile) {
-    const bucket = this.firebase.storage.bucket();
     const path = `settings/next_culte_flyer_${Date.now()}_${file.originalname}`;
-    const ref = bucket.file(path);
-    await ref.save(file.buffer, { contentType: file.mimetype });
-    await ref.makePublic();
-    const url = ref.publicUrl();
-    await this.firebase.firestore.doc(NEXT_CULTE_DOC).set({ flyerUrl: url }, { merge: true });
+    const url  = await this.storage.upload(path, file.buffer, file.mimetype);
+    const current = (await this.getNextCulte()) ?? {};
+    await this.setSetting('next_culte', { ...current, flyerUrl: url });
     return { url };
   }
 
   async broadcastNextCulte(): Promise<{ envoyes: number }> {
-    const snap = await this.firebase.firestore.doc(NEXT_CULTE_DOC).get();
-    if (!snap.exists) return { envoyes: 0 };
+    const culte = await this.getNextCulte();
+    if (!culte) return { envoyes: 0 };
 
-    const culte = snap.data() as any;
-
-    // Collecter tous les emails uniques (marathon + inscriptions générales)
-    const [marathonSnap, inscSnap] = await Promise.all([
-      this.firebase.firestore.collection('marathon_inscriptions').get(),
-      this.firebase.firestore.collection('inscriptions').get(),
+    const [marathon, inscs] = await Promise.all([
+      this.marathonInscRepo.find({ select: ['email'] }),
+      this.inscRepo.find({ select: ['email'] }),
     ]);
-
-    const emails = new Set<string>();
-    marathonSnap.docs.forEach(d => { if (d.data()['email']) emails.add(d.data()['email']); });
-    inscSnap.docs.forEach(d => { if (d.data()['email']) emails.add(d.data()['email']); });
+    const emails = new Set([...marathon, ...inscs].map(i => i.email));
 
     let envoyes = 0;
     for (const email of emails) {
-      await this.mail
-        .sendCulteAnnonce(email, culte.sujet ?? 'Prochain culte', culte.message ?? '', culte.date ?? '', culte.flyerUrl ?? null)
+      await this.mail.sendCulteAnnonce(email, culte.sujet ?? '', culte.message ?? '', culte.date ?? '', culte.flyerUrl ?? null)
         .catch(err => this.logger.error('Mail culte broadcast', err));
       envoyes++;
     }
-
     return { envoyes };
   }
 
-  // ── Page content ─────────────────────────────────────
+  // ── Pages ─────────────────────────────────────────────────────────────────
+
   async getPage(pageId: string) {
-    const snap = await this.firebase.firestore.doc(PAGE_DOC(pageId)).get();
-    return snap.exists ? snap.data() : null;
+    return this.getSetting<any>(`page_${pageId}`, null);
   }
 
   async updatePage(pageId: string, data: Record<string, any>) {
-    await this.firebase.firestore.doc(PAGE_DOC(pageId)).set(data, { merge: true });
+    const current = (await this.getPage(pageId)) ?? {};
+    await this.setSetting(`page_${pageId}`, { ...current, ...data });
     return this.getPage(pageId);
   }
 
   async uploadPageImage(pageId: string, field: string, file: UploadedFile) {
-    const bucket = this.firebase.storage.bucket();
     const path = `pages/${pageId}/${field}_${Date.now()}_${file.originalname}`;
-    const ref = bucket.file(path);
-    await ref.save(file.buffer, { contentType: file.mimetype });
-    await ref.makePublic();
-    const url = ref.publicUrl();
-    await this.firebase.firestore
-      .doc(PAGE_DOC(pageId))
-      .set({ [field]: url }, { merge: true });
+    const url  = await this.storage.upload(path, file.buffer, file.mimetype);
+    await this.updatePage(pageId, { [field]: url });
     return { url };
+  }
+
+  // ── Email templates ───────────────────────────────────────────────────────
+
+  async getTemplate(key: string) {
+    return this.templateRepo.findOne({ where: { key } });
+  }
+
+  async upsertTemplate(key: string, subject: string, body: string) {
+    const existing = await this.templateRepo.findOne({ where: { key } });
+    if (existing) {
+      await this.templateRepo.update(existing.id, { subject, body });
+    } else {
+      await this.templateRepo.save(this.templateRepo.create({ key, subject, body }));
+    }
+    return this.templateRepo.findOne({ where: { key } });
+  }
+
+  async deleteTemplate(key: string) {
+    await this.templateRepo.delete({ key });
+    return { message: 'Template supprimé' };
+  }
+
+  async getAllTemplates() {
+    return this.templateRepo.find({ order: { key: 'ASC' } });
   }
 }
