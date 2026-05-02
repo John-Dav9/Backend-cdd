@@ -38,7 +38,8 @@ export class AnnoncesService {
             .filter(e => e.includes('@')),
         ),
       ];
-      await this.mail.sendAnnonce(emails, dto.titre, dto.contenu);
+      // Envoi en arrière-plan : ne bloque pas la réponse HTTP
+      this.mail.sendAnnonce(emails, dto.titre, dto.contenu).catch(() => {});
     }
 
     return { id: saved.id, message: 'Annonce créée' };
