@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Annonce } from '../database/entities/annonce.entity';
 import { Inscription } from '../database/entities/inscription.entity';
 import { MarathonInscription } from '../database/entities/marathon-inscription.entity';
+import { NewsletterSubscriber } from '../database/entities/newsletter-subscriber.entity';
 import { MailService } from '../mail/mail.service';
 import { CreateAnnonceDto } from './dto/create-annonce.dto';
 
@@ -13,6 +14,7 @@ export class AnnoncesService {
     @InjectRepository(Annonce) private repo: Repository<Annonce>,
     @InjectRepository(Inscription) private inscRepo: Repository<Inscription>,
     @InjectRepository(MarathonInscription) private marathonInscRepo: Repository<MarathonInscription>,
+    @InjectRepository(NewsletterSubscriber) private newsletterRepo: Repository<NewsletterSubscriber>,
     private mail: MailService,
   ) {}
 
@@ -24,11 +26,18 @@ export class AnnoncesService {
     }));
 
     if (dto.envoyerEmail) {
-      const [inscs, marathonInscs] = await Promise.all([
+      const [inscs, marathonInscs, newsletterSubs] = await Promise.all([
         this.inscRepo.find({ select: ['email'] }),
         this.marathonInscRepo.find({ select: ['email'] }),
+        this.newsletterRepo.find({ select: ['email'] }),
       ]);
-      const emails = [...new Set([...inscs, ...marathonInscs].map(i => i.email))];
+      const emails = [
+        ...new Set(
+          [...inscs, ...marathonInscs, ...newsletterSubs]
+            .map(i => (i.email ?? '').toLowerCase().trim())
+            .filter(e => e.includes('@')),
+        ),
+      ];
       await this.mail.sendAnnonce(emails, dto.titre, dto.contenu);
     }
 
