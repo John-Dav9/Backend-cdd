@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, QueryFailedError, Repository } from 'typeorm';
 import { Marathon } from '../database/entities/marathon.entity';
 import { MarathonInscription } from '../database/entities/marathon-inscription.entity';
 import { MailService } from '../mail/mail.service';
@@ -81,11 +81,12 @@ export class MarathonService {
     const emails = new Set<string>();
     inscs.forEach(i => { if (i.marathonId !== newMarathonId) emails.add(i.email); });
 
-    for (const email of emails) {
-      await this.mail.sendNewsletterNouveauMarathon(email, marathon).catch(
-        err => this.logger.error('Newsletter email failed', err),
-      );
-    }
+    await Promise.all(
+      [...emails].map(email =>
+        this.mail.sendNewsletterNouveauMarathon(email, marathon)
+          .catch(err => this.logger.error('Newsletter email failed', err)),
+      ),
+    );
   }
 
   async uploadFlyer(id: string, file: { originalname: string; mimetype: string; buffer: Buffer }) {
@@ -100,10 +101,13 @@ export class MarathonService {
     if (adminMode) {
       return this.marathonRepo.find({ order: { dateDebut: 'DESC' } });
     }
-    const all = await this.marathonRepo.find();
-    return all
-      .filter(m => m.statut === MarathonStatut.PLANIFIE || m.statut === MarathonStatut.ACTIF)
-      .sort((a, b) => (a.dateDebut > b.dateDebut ? -1 : 1));
+    return this.marathonRepo.find({
+      where: [
+        { statut: MarathonStatut.PLANIFIE },
+        { statut: MarathonStatut.ACTIF },
+      ],
+      order: { dateDebut: 'DESC' },
+    });
   }
 
   async findOne(id: string) {
@@ -152,22 +156,24 @@ export class MarathonService {
 
   @Cron('0 9 * * *')
   async envoyerRappelsLecture() {
-    const todayMs = Date.now();
     const marathons = await this.marathonRepo.find({ where: { statut: MarathonStatut.ACTIF } });
+    if (!marathons.length) return;
 
-    for (const marathon of marathons) {
-      const inscs = await this.inscRepo.find({ where: { marathonId: marathon.id } });
+    const marathonIds = marathons.map(m => m.id);
+    const allInscs = await this.inscRepo.find({ where: { marathonId: In(marathonIds) } });
+    const marathonMap = new Map(marathons.map(m => [m.id, m]));
+    const todayMs = Date.now();
 
-      for (const insc of inscs) {
-        if (Number(insc.progressPercent) >= 100) continue;
-        if (!insc.lastActivityAt) continue;
+    for (const insc of allInscs) {
+      if (Number(insc.progressPercent) >= 100) continue;
+      if (!insc.lastActivityAt) continue;
 
-        const daysSince = (todayMs - new Date(insc.lastActivityAt).getTime()) / 86_400_000;
-        if (daysSince >= 3 && daysSince < 4) {
-          await this.mail.sendRappelLecture(
-            insc.email, insc.fullName, marathon, Math.floor(daysSince), Number(insc.progressPercent),
-          ).catch((err: any) => this.logger.error('Rappel lecture', err));
-        }
+      const daysSince = (todayMs - new Date(insc.lastActivityAt).getTime()) / 86_400_000;
+      if (daysSince >= 3 && daysSince < 4) {
+        const marathon = marathonMap.get(insc.marathonId)!;
+        await this.mail.sendRappelLecture(
+          insc.email, insc.fullName, marathon, Math.floor(daysSince), Number(insc.progressPercent),
+        ).catch((err: any) => this.logger.error('Rappel lecture', err));
       }
     }
   }
@@ -186,16 +192,23 @@ export class MarathonService {
     });
     if (existing) throw new BadRequestException('Vous êtes déjà inscrit à ce marathon.');
 
-    await this.inscRepo.save({
-      marathonId,
-      fullName: dto.fullName,
-      email: dto.email.toLowerCase(),
-      phone: dto.phone ?? '',
-      city: dto.city ?? '',
-      progress: {},
-      progressPercent: 0,
-      milestonesReached: [],
-    });
+    try {
+      await this.inscRepo.save({
+        marathonId,
+        fullName: dto.fullName,
+        email: dto.email.toLowerCase(),
+        phone: dto.phone ?? '',
+        city: dto.city ?? '',
+        progress: {},
+        progressPercent: 0,
+        milestonesReached: [],
+      });
+    } catch (err: unknown) {
+      if (err instanceof QueryFailedError && (err as any).code === '23505') {
+        throw new BadRequestException('Vous êtes déjà inscrit à ce marathon.');
+      }
+      throw err;
+    }
 
     await this.marathonRepo.increment({ id: marathonId }, 'nbInscrits', 1);
 
