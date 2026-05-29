@@ -1,0 +1,23 @@
+name: Deploy Staging to VPS
+
+on:
+  push:
+    branches: [staging]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy Staging via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 164.68.110.52
+          username: john_david
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /home/john_david/cmciea
+            git -C backend fetch origin staging
+            git -C backend checkout staging
+            git -C backend pull origin staging
+            docker compose -f docker-compose.staging.yml up -d --build backend-staging frontend-staging
+            docker image prune -f
