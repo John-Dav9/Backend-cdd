@@ -935,6 +935,53 @@ export class MailService {
     } as any).catch(err => this.logger.error('Rappel lecture', err));
   }
 
+  async sendMagicLink(member: { email: string; firstName: string }, link: string) {
+    if (!this.canSendMail()) return;
+    await this.resend!.emails.send({
+      from: this.from,
+      to: member.email,
+      subject: 'Votre lien de connexion — CMCIEA France',
+      html: this.emailShell(`
+        <h2 style="margin:0 0 8px;color:#1A3D64;font-size:22px;">Bonjour ${member.firstName}&nbsp;!</h2>
+        <p style="margin:0 0 24px;color:#555;font-size:15px;line-height:1.6;">
+          Cliquez sur le bouton ci-dessous pour vous connecter à votre espace CMCIEA France.<br/>
+          Ce lien est valable <strong>15 minutes</strong>.
+        </p>
+        <p style="text-align:center;margin:0 0 28px;">
+          <a href="${link}" style="display:inline-block;background:linear-gradient(135deg,#1D546C,#1A3D64);color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:8px;font-size:17px;font-weight:bold;">
+            Se connecter &rarr;
+          </a>
+        </p>
+        <p style="margin:0;font-size:13px;color:#999;text-align:center;">Si vous n'avez pas demandé cette connexion, ignorez cet email.</p>`),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail magic link', err));
+  }
+
+  async sendMeetingReminder(to: string, prenom: string, meeting: { title: string; startTime: Date }) {
+    if (!this.canSendMail()) return;
+    const date = meeting.startTime.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const heure = meeting.startTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const frontendUrl = this.config.get('FRONTEND_URLS', '').split(',')[0].trim();
+    await this.resend!.emails.send({
+      from: this.from,
+      to,
+      subject: `Rappel : ${meeting.title} — aujourd'hui à ${heure}`,
+      html: this.emailShell(`
+        <h2 style="margin:0 0 8px;color:#1A3D64;font-size:22px;">Bonjour ${prenom}&nbsp;!</h2>
+        <p style="margin:0 0 20px;color:#555;font-size:15px;line-height:1.6;">
+          Un rappel pour la réunion <strong style="color:#1D546C;">${meeting.title}</strong><br/>
+          qui commence <strong>${date} à ${heure}</strong>.
+        </p>
+        <p style="text-align:center;margin:0 0 24px;">
+          <a href="${frontendUrl}/reunions" style="display:inline-block;background:linear-gradient(135deg,#1D546C,#1A3D64);color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:6px;font-size:15px;font-weight:bold;">
+            Rejoindre la réunion &rarr;
+          </a>
+        </p>
+        <p style="margin:0;font-size:14px;color:#666;text-align:center;">À tout à l'heure&nbsp;!<br/><strong style="color:#1A3D64;">L'équipe CMCIEA France</strong></p>`),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any).catch(err => this.logger.error('Mail meeting reminder', err));
+  }
+
   async sendNewsletterNouveauMarathon(to: string, marathon: {
     titre: string;
     description: string;

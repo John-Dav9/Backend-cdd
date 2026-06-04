@@ -22,6 +22,8 @@ import { SettingsModule } from './settings/settings.module';
 import { StorageModule } from './storage/storage.module';
 import { TemoignagesModule } from './temoignages/temoignages.module';
 import { UserModule } from './user/user.module';
+import { MembresModule } from './membres/membres.module';
+import { ReunionsModule } from './reunions/reunions.module';
 
 @Module({
   imports: [
@@ -47,6 +49,8 @@ import { UserModule } from './user/user.module';
     NewsletterModule,
     ChatModule,
     UserModule,
+    MembresModule,
+    ReunionsModule,
   ],
   providers: [
     {

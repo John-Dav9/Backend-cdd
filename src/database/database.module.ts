@@ -4,11 +4,16 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Actualite } from './entities/actualite.entity';
 import { Annonce } from './entities/annonce.entity';
 import { Bibliotheque } from './entities/bibliotheque.entity';
+import { CommunitySettings } from './entities/community-settings.entity';
 import { EmailTemplate } from './entities/email-template.entity';
 import { Inscription } from './entities/inscription.entity';
 import { Marathon } from './entities/marathon.entity';
 import { MarathonInscription } from './entities/marathon-inscription.entity';
+import { Member } from './entities/member.entity';
+import { Meeting } from './entities/meeting.entity';
+import { MeetingParticipant } from './entities/meeting-participant.entity';
 import { NewsletterSubscriber } from './entities/newsletter-subscriber.entity';
+import { OtpCode } from './entities/otp-code.entity';
 import { Priere } from './entities/priere.entity';
 import { Setting } from './entities/setting.entity';
 import { Temoignage } from './entities/temoignage.entity';
@@ -29,6 +34,7 @@ import { User } from './entities/user.entity';
           User, Marathon, MarathonInscription, Inscription,
           Actualite, Annonce, Temoignage, Priere,
           NewsletterSubscriber, Bibliotheque, EmailTemplate, Setting,
+          Member, Meeting, MeetingParticipant, CommunitySettings, OtpCode,
         ],
         synchronize: true,
         logging: config.get('NODE_ENV') !== 'production',
