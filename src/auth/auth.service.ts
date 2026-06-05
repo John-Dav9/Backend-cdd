@@ -54,4 +54,69 @@ export class AuthService implements OnModuleInit {
     await this.userRepo.save(user);
     return { message: 'Mot de passe mis à jour' };
   }
+
+  // ═══════════════════════════════════════════════════════════
+// À AJOUTER dans auth.controller.ts
+// ═══════════════════════════════════════════════════════════
+
+// Importer au début du fichier si pas déjà présent :
+// import { Body, Post, Controller } from '@nestjs/common';
+
+@Post('quick-login')
+@Public()  // décoratuer @Public() si ton guard est global
+async quickLogin(@Body() body: { email: string }) {
+  return this.authService.quickLogin(body.email);
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// À AJOUTER dans auth.service.ts
+// ═══════════════════════════════════════════════════════════
+
+// Importer au début si pas déjà présent :
+// import { JwtService } from '@nestjs/jwt';
+// import { InjectRepository } from '@nestjs/typeorm';
+// import { Member } from '../database/entities/member.entity';
+// import { Repository } from 'typeorm';
+
+async quickLogin(email: string): Promise<{ access_token: string; member: any }> {
+  // Chercher le membre en base
+  const member = await this.memberRepository.findOne({
+    where: { email: email.toLowerCase().trim() },
+  });
+
+  if (!member) {
+    throw new UnauthorizedException('Email non trouvé');
+  }
+
+  if (!member.isActive) {
+    throw new UnauthorizedException('Compte désactivé');
+  }
+
+  // Générer le JWT directement sans OTP
+  const payload = {
+    sub: member.id,
+    email: member.email,
+    role: member.role,
+  };
+
+  const access_token = this.jwtService.sign(payload);
+
+  // Mettre à jour la date de dernière connexion
+  await this.memberRepository.update(member.id, {
+    lastLoginAt: new Date(),
+  });
+
+  return {
+    access_token,
+    member: {
+      id: member.id,
+      firstName: member.firstName,
+      lastName: member.lastName,
+      email: member.email,
+      role: member.role,
+    },
+  };
+}
+
 }
