@@ -32,7 +32,8 @@ export class ReunionsController {
 
   @Post()
   create(@Body() dto: CreateReunionDto, @Request() req: any) {
-    return this.reunionsService.create(dto, req.user.sub);
+    const memberId = req.user.type === 'member' ? req.user.sub : null;
+    return this.reunionsService.create(dto, memberId);
   }
 
   @Put(':id')
@@ -47,7 +48,7 @@ export class ReunionsController {
 
   @Post(':id/join')
   join(@Param('id') id: string, @Body() dto: JoinReunionDto, @Request() req: any) {
-    return this.reunionsService.join(id, req.user.sub, dto);
+    return this.reunionsService.join(id, req.user.sub, dto, req.user);
   }
 
   @Post(':id/end')

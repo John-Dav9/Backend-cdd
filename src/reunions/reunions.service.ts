@@ -63,7 +63,7 @@ export class ReunionsService {
     return meeting;
   }
 
-  async create(dto: CreateReunionDto, createdById: string) {
+  async create(dto: CreateReunionDto, createdById: string | null) {
     const jitsiRoomId = this.jitsiService.generateRoomId();
     const meeting = await this.meetingRepo.save({
       title: dto.title,
@@ -75,7 +75,7 @@ export class ReunionsService {
       recurrenceRule: dto.recurrenceRule,
       jitsiRoomId,
       status: 'scheduled',
-      createdById,
+      ...(createdById ? { createdById } : {}),
     });
     return meeting;
   }
@@ -97,7 +97,7 @@ export class ReunionsService {
     return { message: 'Réunion annulée' };
   }
 
-  async join(id: string, memberId: string, dto: JoinReunionDto) {
+  async join(id: string, userId: string, dto: JoinReunionDto, jwtUser?: any) {
     const meeting = await this.findOne(id);
 
     if (meeting.status === 'cancelled') {
@@ -107,17 +107,34 @@ export class ReunionsService {
       throw new ForbiddenException('Cette réunion est terminée');
     }
 
-    const member = await this.memberRepo.findOne({ where: { id: memberId } });
-    if (!member) throw new NotFoundException('Membre non trouvé');
+    const isAdminUser = jwtUser?.type !== 'member';
+    let member = await this.memberRepo.findOne({ where: { id: userId } });
 
-    const isModerator = member.role === 'admin' || member.role === 'super_admin';
-    const displayName = dto.displayName || `${member.firstName} ${member.lastName}`;
+    if (!member) {
+      if (!isAdminUser) throw new NotFoundException('Membre non trouvé');
+      // Admin sans profil Member : créer un membre temporaire en mémoire
+      member = {
+        id: userId,
+        firstName: 'Administrateur',
+        lastName: '',
+        email: jwtUser?.email ?? '',
+        role: 'admin',
+        isActive: true,
+      } as any;
+    }
+
+    const isModerator = member.role === 'admin' || member.role === 'super_admin'
+      || jwtUser?.role === 'admin';
+    const displayName = dto.displayName || `${member.firstName} ${member.lastName}`.trim();
     const reconnectToken = randomBytes(16).toString('hex');
+    const realMemberId = isAdminUser && !await this.memberRepo.findOne({ where: { id: userId } })
+      ? null
+      : userId;
 
     // Enregistrer la participation
-    const existing = await this.participantRepo.findOne({
-      where: { meetingId: id, memberId },
-    });
+    const existing = realMemberId ? await this.participantRepo.findOne({
+      where: { meetingId: id, memberId: realMemberId },
+    }) : null;
 
     if (existing) {
       existing.leftAt = null as any;
@@ -128,7 +145,7 @@ export class ReunionsService {
     } else {
       await this.participantRepo.save({
         meetingId: id,
-        memberId,
+        ...(realMemberId ? { memberId: realMemberId } : {}),
         displayName,
         wasAdmin: isModerator,
         reconnectToken,
