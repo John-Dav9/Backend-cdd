@@ -25,6 +25,7 @@ export class ReunionsController {
     return this.reunionsService.findUpcoming();
   }
 
+  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.reunionsService.findOne(id);

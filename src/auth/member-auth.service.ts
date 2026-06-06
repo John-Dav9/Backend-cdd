@@ -145,6 +145,12 @@ export class MemberAuthService {
     return this.generateMemberToken(member.email);
   }
 
+  async quickLogin(email: string) {
+    const member = await this.memberRepo.findOne({ where: { email: email.toLowerCase().trim() } });
+    if (!member) throw new UnauthorizedException('Email non trouvé');
+    return this.generateMemberToken(member.email);
+  }
+
   async getMe(memberId: string) {
     const member = await this.memberRepo.findOne({ where: { id: memberId } });
     if (!member) throw new NotFoundException('Membre non trouvé');

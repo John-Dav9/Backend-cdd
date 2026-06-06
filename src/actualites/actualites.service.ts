@@ -37,6 +37,12 @@ export class ActualitesService {
     return a;
   }
 
+  async findOnePublic(id: string) {
+    const a = await this.repo.findOne({ where: { id, publiee: true } });
+    if (!a) throw new NotFoundException('Actualité introuvable');
+    return a;
+  }
+
   async update(id: string, dto: Partial<CreateActualiteDto>) {
     const { tags, ...rest } = dto;
     const data: Partial<Actualite> = { ...rest };

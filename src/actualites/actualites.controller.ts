@@ -13,16 +13,16 @@ export class ActualitesController {
     return this.service.findAll(true);
   }
 
-  @Public()
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
-  }
-
-  // Admin
+  // Admin — doit être avant :id pour éviter le conflit de route
   @Get('admin/all')
   findAll() {
     return this.service.findAll(false);
+  }
+
+  @Public()
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.service.findOnePublic(id);
   }
 
   @Post()
