@@ -72,6 +72,11 @@ export class ReunionsController {
     return this.reunionsService.getParticipants(id);
   }
 
+  @Get(':id/attendance')
+  getAttendance(@Param('id') id: string) {
+    return this.reunionsService.getAttendance(id);
+  }
+
   @Post(':id/send-reminders')
   sendReminders(@Param('id') id: string) {
     return this.reunionsService.sendReminders(id);

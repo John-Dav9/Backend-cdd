@@ -5,7 +5,9 @@ import { MeetingParticipant } from '../database/entities/meeting-participant.ent
 import { Meeting } from '../database/entities/meeting.entity';
 import { MailModule } from '../mail/mail.module';
 import { JitsiService } from './jitsi.service';
+import { MeetingGateway } from './meeting.gateway';
 import { ReunionsController } from './reunions.controller';
+import { ReunionsScheduler } from './reunions.scheduler';
 import { ReunionsService } from './reunions.service';
 
 @Module({
@@ -14,7 +16,7 @@ import { ReunionsService } from './reunions.service';
     MailModule,
   ],
   controllers: [ReunionsController],
-  providers: [ReunionsService, JitsiService],
-  exports: [ReunionsService, JitsiService],
+  providers: [ReunionsService, JitsiService, ReunionsScheduler, MeetingGateway],
+  exports: [ReunionsService, JitsiService, MeetingGateway],
 })
 export class ReunionsModule {}

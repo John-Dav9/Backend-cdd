@@ -231,6 +231,31 @@ export class ReunionsService {
     });
   }
 
+  async getAttendance(id: string) {
+    const participants = await this.participantRepo.find({
+      where: { meetingId: id },
+      relations: ['member'],
+      order: { joinedAt: 'ASC' },
+    });
+
+    return participants.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      member: p.member ? {
+        id: p.member.id,
+        firstName: p.member.firstName,
+        lastName: p.member.lastName,
+        email: p.member.email,
+      } : null,
+      joinedAt: p.joinedAt,
+      leftAt: p.leftAt,
+      durationMinutes: p.leftAt && p.joinedAt
+        ? Math.round((new Date(p.leftAt).getTime() - new Date(p.joinedAt).getTime()) / 60000)
+        : null,
+      wasAdmin: p.wasAdmin,
+    }));
+  }
+
   async sendReminders(id: string) {
     const meeting = await this.findOne(id);
     const members = await this.memberRepo.find({ where: { isActive: true } });
