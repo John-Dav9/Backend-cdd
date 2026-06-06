@@ -28,7 +28,6 @@ export class ReunionsService {
 
   async findCurrent() {
     const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
     const live = await this.meetingRepo.findOne({
       where: { status: 'live' },
@@ -254,6 +253,30 @@ export class ReunionsService {
         : null,
       wasAdmin: p.wasAdmin,
     }));
+  }
+
+  async muteParticipant(meetingId: string, participantJitsiId: string) {
+    const meeting = await this.findOne(meetingId);
+    await this.jitsiService.muteParticipant(meeting.jitsiRoomId, participantJitsiId);
+    return { message: 'Participant coupé' };
+  }
+
+  async kickParticipant(meetingId: string, participantId: string) {
+    const meeting = await this.findOne(meetingId);
+    const participant = await this.participantRepo.findOne({ where: { id: participantId } });
+    if (participant) {
+      participant.leftAt = new Date();
+      await this.participantRepo.save(participant);
+    }
+    await this.jitsiService.kickParticipant(meeting.jitsiRoomId, participantId);
+    return { message: 'Participant exclu' };
+  }
+
+  async grantModerator(meetingId: string, memberId: string) {
+    const meeting = await this.findOne(meetingId);
+    await this.participantRepo.update({ meetingId, memberId }, { wasAdmin: true });
+    await this.jitsiService.grantModerator(meeting.jitsiRoomId, memberId);
+    return { message: 'Droits modérateur accordés' };
   }
 
   async sendReminders(id: string) {

@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Request } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { UpdateMembreDto, UpdateRoleDto, UpdateSettingsDto } from './dto/membres.dto';
 import { MembresService } from './membres.service';
 
@@ -9,6 +10,12 @@ export class MembresController {
   @Get()
   findAll() {
     return this.membresService.findAll();
+  }
+
+  @Public()
+  @Get('annuaire')
+  annuaire() {
+    return this.membresService.findAnnuaire();
   }
 
   @Get('settings')

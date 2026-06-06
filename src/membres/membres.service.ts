@@ -20,6 +20,15 @@ export class MembresService {
     return this.memberRepo.find({ order: { createdAt: 'DESC' } });
   }
 
+  async findAnnuaire() {
+    const members = await this.memberRepo.find({
+      where: { isActive: true },
+      order: { firstName: 'ASC' },
+      select: ['id', 'firstName', 'lastName', 'city', 'role', 'createdAt'],
+    });
+    return members;
+  }
+
   async findOne(id: string) {
     const member = await this.memberRepo.findOne({ where: { id } });
     if (!member) throw new NotFoundException('Membre non trouvé');

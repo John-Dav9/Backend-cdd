@@ -18,7 +18,10 @@ import { Priere } from './entities/priere.entity';
 import { Setting } from './entities/setting.entity';
 import { Temoignage } from './entities/temoignage.entity';
 import { Message } from './entities/message.entity';
+import { Recording } from './entities/recording.entity';
 import { User } from './entities/user.entity';
+import { AuditLog } from './entities/audit-log.entity';
+import { CellGroup } from './entities/cell-group.entity';
 
 @Module({
   imports: [
@@ -35,7 +38,8 @@ import { User } from './entities/user.entity';
           User, Marathon, MarathonInscription, Inscription,
           Actualite, Annonce, Temoignage, Priere,
           NewsletterSubscriber, Bibliotheque, EmailTemplate, Setting,
-          Member, Meeting, MeetingParticipant, CommunitySettings, OtpCode, Message,
+          Member, Meeting, MeetingParticipant, CommunitySettings, OtpCode, Message, Recording,
+          AuditLog, CellGroup,
         ],
         synchronize: true,
         logging: config.get('NODE_ENV') !== 'production',

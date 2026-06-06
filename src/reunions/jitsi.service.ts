@@ -38,6 +38,40 @@ export class JitsiService {
     return jwt.sign(payload, secret, { expiresIn: '4h', algorithm: 'HS256' });
   }
 
+  async muteParticipant(roomId: string, participantId: string): Promise<void> {
+    const jicofoUrl = this.config.get<string>('JITSI_JICOFO_URL');
+    if (!jicofoUrl) return;
+    try {
+      await fetch(`${jicofoUrl}/colibri/conferences/${roomId}/participants/${participantId}/mute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio: true }),
+      });
+    } catch { /* silently fail — la commande Jitsi côté client suffit */ }
+  }
+
+  async kickParticipant(roomId: string, participantId: string): Promise<void> {
+    const jicofoUrl = this.config.get<string>('JITSI_JICOFO_URL');
+    if (!jicofoUrl) return;
+    try {
+      await fetch(`${jicofoUrl}/colibri/conferences/${roomId}/participants/${participantId}`, {
+        method: 'DELETE',
+      });
+    } catch { /* silently fail */ }
+  }
+
+  async grantModerator(roomId: string, participantId: string): Promise<void> {
+    const jicofoUrl = this.config.get<string>('JITSI_JICOFO_URL');
+    if (!jicofoUrl) return;
+    try {
+      await fetch(`${jicofoUrl}/colibri/conferences/${roomId}/participants/${participantId}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'moderator' }),
+      });
+    } catch { /* silently fail */ }
+  }
+
   generateRoomId(): string {
     const prefix = 'cmciea';
     const random = Math.random().toString(36).substring(2, 10);

@@ -9,13 +9,14 @@ import { MeetingGateway } from './meeting.gateway';
 import { ReunionsController } from './reunions.controller';
 import { ReunionsScheduler } from './reunions.scheduler';
 import { ReunionsService } from './reunions.service';
+import { StatsController } from './reunions.stats';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Meeting, MeetingParticipant, Member]),
     MailModule,
   ],
-  controllers: [ReunionsController],
+  controllers: [ReunionsController, StatsController],
   providers: [ReunionsService, JitsiService, ReunionsScheduler, MeetingGateway],
   exports: [ReunionsService, JitsiService, MeetingGateway],
 })

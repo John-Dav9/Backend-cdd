@@ -23,7 +23,12 @@ import { StorageModule } from './storage/storage.module';
 import { TemoignagesModule } from './temoignages/temoignages.module';
 import { UserModule } from './user/user.module';
 import { MembresModule } from './membres/membres.module';
+import { ReplaysModule } from './replays/replays.module';
 import { ReunionsModule } from './reunions/reunions.module';
+import { StreamingModule } from './streaming/streaming.module';
+import { BibleModule } from './bible/bible.module';
+import { AuditModule } from './audit/audit.module';
+import { CellGroupsModule } from './cell-groups/cell-groups.module';
 
 @Module({
   imports: [
@@ -50,7 +55,12 @@ import { ReunionsModule } from './reunions/reunions.module';
     ChatModule,
     UserModule,
     MembresModule,
+    ReplaysModule,
     ReunionsModule,
+    StreamingModule,
+    BibleModule,
+    AuditModule,
+    CellGroupsModule,
   ],
   providers: [
     {

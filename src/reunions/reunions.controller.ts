@@ -81,4 +81,19 @@ export class ReunionsController {
   sendReminders(@Param('id') id: string) {
     return this.reunionsService.sendReminders(id);
   }
+
+  @Post(':id/mute/:participantJitsiId')
+  muteParticipant(@Param('id') id: string, @Param('participantJitsiId') participantJitsiId: string) {
+    return this.reunionsService.muteParticipant(id, participantJitsiId);
+  }
+
+  @Post(':id/kick/:participantId')
+  kickParticipant(@Param('id') id: string, @Param('participantId') participantId: string) {
+    return this.reunionsService.kickParticipant(id, participantId);
+  }
+
+  @Post(':id/grant-moderator/:memberId')
+  grantModerator(@Param('id') id: string, @Param('memberId') memberId: string) {
+    return this.reunionsService.grantModerator(id, memberId);
+  }
 }
