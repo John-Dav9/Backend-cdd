@@ -29,6 +29,7 @@ import { StreamingModule } from './streaming/streaming.module';
 import { BibleModule } from './bible/bible.module';
 import { AuditModule } from './audit/audit.module';
 import { CellGroupsModule } from './cell-groups/cell-groups.module';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { CellGroupsModule } from './cell-groups/cell-groups.module';
     BibleModule,
     AuditModule,
     CellGroupsModule,
+    StatsModule,
   ],
   providers: [
     {

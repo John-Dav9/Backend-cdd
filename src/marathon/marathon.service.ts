@@ -116,6 +116,15 @@ export class MarathonService {
     return m;
   }
 
+  async findOrphaned() {
+    const ids = (await this.marathonRepo.find({ select: ['id'] })).map((m) => m.id);
+    if (!ids.length) return [];
+    return this.inscRepo
+      .createQueryBuilder('i')
+      .where('i.marathon_id NOT IN (:...ids)', { ids })
+      .getMany();
+  }
+
   async archiver(id: string) {
     await this.getOrFail(id);
     await this.marathonRepo.update(id, { statut: MarathonStatut.ARCHIVE });
