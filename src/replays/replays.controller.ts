@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { Request } from 'express';
 import { AdminOnly, Roles } from '../auth/roles.decorator';
 import { CreateRecordingDto } from './dto/create-recording.dto';
@@ -10,8 +10,8 @@ export class ReplaysController {
   constructor(private readonly service: ReplaysService) {}
 
   @Get()
-  findAllPublic() {
-    return this.service.findAllPublic();
+  findAllPublic(@Query('limit') limit?: string) {
+    return this.service.findAllPublic(limit ? parseInt(limit, 10) : undefined);
   }
 
   // Admin — avant :id pour éviter conflit de route

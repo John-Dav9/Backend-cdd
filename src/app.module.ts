@@ -31,6 +31,7 @@ import { AuditModule } from './audit/audit.module';
 import { CellGroupsModule } from './cell-groups/cell-groups.module';
 import { StatsModule } from './stats/stats.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { MentorshipModule } from './mentorship/mentorship.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     CellGroupsModule,
     StatsModule,
     NotificationsModule,
+    MentorshipModule,
   ],
   providers: [
     {

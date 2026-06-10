@@ -112,6 +112,28 @@ export class BibleService {
     }));
   }
 
+  getQuiz(count = 5) {
+    const verses = this.getClassicVerses();
+    return [...verses]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, count)
+      .map((verse, index) => {
+        const alternatives = verses
+          .filter(item => item.reference !== verse.reference)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 3)
+          .map(item => item.reference);
+        const options = [...alternatives, verse.reference].sort(() => Math.random() - 0.5);
+        return {
+          id: `${index}-${verse.reference}`,
+          question: `Quelle est la référence de ce verset ?`,
+          excerpt: verse.text,
+          options,
+          answerIndex: options.indexOf(verse.reference),
+        };
+      });
+  }
+
   private formatReference(ref: string): string {
     return ref.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }

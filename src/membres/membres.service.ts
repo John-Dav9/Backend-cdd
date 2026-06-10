@@ -16,8 +16,16 @@ export class MembresService {
     @InjectRepository(CommunitySettings) private settingsRepo: Repository<CommunitySettings>,
   ) {}
 
-  async findAll() {
-    return this.memberRepo.find({ order: { createdAt: 'DESC' } });
+  async findAll(search?: string) {
+    const qb = this.memberRepo.createQueryBuilder('m').orderBy('m.created_at', 'DESC').take(500);
+    if (search) {
+      const q = `%${search.toLowerCase()}%`;
+      qb.where(
+        'LOWER(m.first_name) LIKE :q OR LOWER(m.last_name) LIKE :q OR LOWER(m.email) LIKE :q',
+        { q },
+      );
+    }
+    return qb.getMany();
   }
 
   async findAnnuaire() {

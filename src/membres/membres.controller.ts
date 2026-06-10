@@ -1,5 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Request } from '@nestjs/common';
-import { Public } from '../auth/public.decorator';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Request } from '@nestjs/common';
 import { AdminOnly, Roles } from '../auth/roles.decorator';
 import { UpdateMembreDto, UpdateRoleDto, UpdateSettingsDto } from './dto/membres.dto';
 import { MembresService } from './membres.service';
@@ -10,8 +9,8 @@ export class MembresController {
 
   @Get()
   @AdminOnly()
-  findAll() {
-    return this.membresService.findAll();
+  findAll(@Query('search') search?: string) {
+    return this.membresService.findAll(search);
   }
 
   @Get('annuaire')

@@ -127,6 +127,12 @@ export class BaselineSchema1717977600000 implements MigrationInterface {
         "endpoint" varchar NOT NULL UNIQUE, "p256dh" varchar NOT NULL, "auth" varchar NOT NULL,
         "created_at" timestamp NOT NULL DEFAULT now(), "updated_at" timestamp NOT NULL DEFAULT now()
       )`,
+      `CREATE TABLE IF NOT EXISTS "mentorship_requests" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "requester_id" uuid NOT NULL,
+        "mentor_id" uuid, "topic" varchar NOT NULL, "message" text NOT NULL,
+        "status" varchar NOT NULL DEFAULT 'pending',
+        "created_at" timestamp NOT NULL DEFAULT now(), "updated_at" timestamp NOT NULL DEFAULT now()
+      )`,
       `CREATE TABLE IF NOT EXISTS "settings" (
         "key" varchar PRIMARY KEY, "value" jsonb NOT NULL, "updated_at" timestamp NOT NULL DEFAULT now()
       )`,
@@ -159,11 +165,15 @@ export class BaselineSchema1717977600000 implements MigrationInterface {
       'FOREIGN KEY ("member_id") REFERENCES "members"("id") ON DELETE SET NULL');
     await this.addForeignKey(queryRunner, 'push_subscriptions', 'FK_push_member',
       'FOREIGN KEY ("member_id") REFERENCES "members"("id") ON DELETE CASCADE');
+    await this.addForeignKey(queryRunner, 'mentorship_requests', 'FK_mentorship_requester',
+      'FOREIGN KEY ("requester_id") REFERENCES "members"("id") ON DELETE CASCADE');
+    await this.addForeignKey(queryRunner, 'mentorship_requests', 'FK_mentorship_mentor',
+      'FOREIGN KEY ("mentor_id") REFERENCES "members"("id") ON DELETE SET NULL');
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {
     const tables = [
-      'push_subscriptions', 'meeting_participants', 'meetings', 'community_settings', 'otp_codes', 'recordings',
+      'mentorship_requests', 'push_subscriptions', 'meeting_participants', 'meetings', 'community_settings', 'otp_codes', 'recordings',
       'cell_groups', 'audit_logs', 'marathon_inscriptions', 'marathons', 'newsletter_subscribers',
       'bibliotheque', 'email_templates', 'inscriptions', 'actualites', 'annonces', 'messages',
       'prieres', 'temoignages', 'settings', 'members', 'users',

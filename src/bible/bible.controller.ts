@@ -24,4 +24,10 @@ export class BibleController {
   getClassics() {
     return this.bibleService.getClassicVerses();
   }
+
+  @Public()
+  @Get('quiz')
+  getQuiz(@Query('count') count?: string) {
+    return this.bibleService.getQuiz(Math.min(Math.max(Number(count) || 5, 3), 10));
+  }
 }

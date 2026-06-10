@@ -11,10 +11,11 @@ export class ReplaysService {
 
   constructor(@InjectRepository(Recording) private repo: Repository<Recording>) {}
 
-  findAllPublic() {
+  findAllPublic(limit = 100) {
     return this.repo.find({
       where: { isPublic: true },
       order: { publishedAt: 'DESC', createdAt: 'DESC' },
+      take: Math.min(limit, 200),
     });
   }
 
