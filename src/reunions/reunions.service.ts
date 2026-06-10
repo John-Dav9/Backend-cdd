@@ -123,7 +123,7 @@ export class ReunionsService {
     }
 
     const isModerator = member.role === 'admin' || member.role === 'super_admin'
-      || jwtUser?.role === 'admin';
+      || jwtUser?.role === 'admin' || jwtUser?.role === 'super_admin';
     const displayName = dto.displayName || `${member.firstName} ${member.lastName}`.trim();
     const reconnectToken = randomBytes(16).toString('hex');
     const realMemberId = isAdminUser && !await this.memberRepo.findOne({ where: { id: userId } })
