@@ -30,6 +30,7 @@ import { BibleModule } from './bible/bible.module';
 import { AuditModule } from './audit/audit.module';
 import { CellGroupsModule } from './cell-groups/cell-groups.module';
 import { StatsModule } from './stats/stats.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { StatsModule } from './stats/stats.module';
     AuditModule,
     CellGroupsModule,
     StatsModule,
+    NotificationsModule,
   ],
   providers: [
     {

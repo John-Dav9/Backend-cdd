@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -36,6 +36,15 @@ export class JitsiService {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const jwt = require('jsonwebtoken');
     return jwt.sign(payload, secret, { expiresIn: '4h', algorithm: 'HS256' });
+  }
+
+  assertJibriAvailable(): void {
+    const enabled = this.config.get<string>('JIBRI_ENABLED', 'false').toLowerCase() === 'true';
+    if (!enabled) {
+      throw new ServiceUnavailableException(
+        'L’enregistrement Jitsi n’est pas configuré sur le serveur. Activez Jibri avant de lancer cette fonction.',
+      );
+    }
   }
 
   async muteParticipant(roomId: string, participantId: string): Promise<void> {

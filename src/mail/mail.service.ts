@@ -957,6 +957,30 @@ export class MailService {
     } as any).catch(err => this.logger.error('Mail magic link', err));
   }
 
+  async sendAdminLoginCode(to: string, code: string) {
+    if (!this.canSendMail()) {
+      throw new Error('Le service email est requis pour la double authentification administrateur.');
+    }
+    const result = await this.resend!.emails.send({
+      from: this.from,
+      to,
+      subject: 'Code de connexion administrateur — CMCIEA France',
+      html: this.emailShell(`
+        <h2 style="margin:0 0 12px;color:#1A3D64;font-size:22px;">Connexion à l’administration</h2>
+        <p style="margin:0 0 20px;color:#555;font-size:15px;line-height:1.6;">
+          Utilisez le code ci-dessous pour terminer votre connexion. Il expire dans 10 minutes.
+        </p>
+        <p style="margin:0 0 22px;text-align:center;font-size:34px;letter-spacing:8px;font-weight:700;color:#1D546C;">
+          ${code}
+        </p>
+        <p style="margin:0;font-size:13px;color:#999;text-align:center;">
+          Si vous n’êtes pas à l’origine de cette demande, changez immédiatement votre mot de passe.
+        </p>`),
+      ...(this.replyTo ? { reply_to: this.replyTo } : {}),
+    } as any);
+    if (result.error) throw new Error('Le code de connexion n’a pas pu être envoyé.');
+  }
+
   async sendMeetingReminder(to: string, prenom: string, meeting: { title: string; startTime: Date }) {
     if (!this.canSendMail()) return;
     const date = meeting.startTime.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });

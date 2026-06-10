@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
+import { AdminOnly } from '../auth/roles.decorator';
 import { CreateInscriptionDto, InscriptionType } from './dto/create-inscription.dto';
 import { InscriptionsService } from './inscriptions.service';
 
@@ -17,11 +18,13 @@ export class InscriptionsController {
 
   // Routes admin protégées (token Firebase requis)
   @Get()
+  @AdminOnly()
   findAll(@Query('type') type?: InscriptionType) {
     return this.service.findAll(type);
   }
 
   @Delete(':id')
+  @AdminOnly()
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

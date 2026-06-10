@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
+import { AdminOnly } from '../auth/roles.decorator';
 import { PrieresService, PriereStatut } from './prieres.service';
 
 @Controller('prieres')
@@ -21,16 +22,19 @@ export class PrieresController {
   }
 
   @Get()
+  @AdminOnly()
   findAll() {
     return this.service.findAll();
   }
 
   @Patch(':id/statut')
+  @AdminOnly()
   updateStatut(@Param('id') id: string, @Body('statut') statut: PriereStatut) {
     return this.service.updateStatut(id, statut);
   }
 
   @Delete(':id')
+  @AdminOnly()
   supprimer(@Param('id') id: string) {
     return this.service.supprimer(id);
   }

@@ -8,7 +8,9 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThan, Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
+import { randomBytes, randomInt } from 'crypto';
+import { IsNull, MoreThan, Repository } from 'typeorm';
 import { CommunitySettings } from '../database/entities/community-settings.entity';
 import { Member } from '../database/entities/member.entity';
 import { OtpCode } from '../database/entities/otp-code.entity';
@@ -54,18 +56,28 @@ export class MemberAuthService {
     if (!member) throw new NotFoundException('Membre non trouvé');
 
     // Invalider les anciens codes
-    await this.otpRepo.update({ email: email.toLowerCase(), usedAt: null }, { usedAt: new Date() });
+    await this.otpRepo.update(
+      { email: email.toLowerCase(), usedAt: IsNull() },
+      { usedAt: new Date() },
+    );
 
-    const code = Math.floor(1000 + Math.random() * 9000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
     if (member.phone) {
-      await this.otpRepo.save({ email: email.toLowerCase(), code, type: 'sms', expiresAt });
+      const code = randomInt(1000, 10000).toString();
+      const codeHash = await bcrypt.hash(code, 10);
+      await this.otpRepo.save({ email: email.toLowerCase(), code: codeHash, type: 'sms', expiresAt });
       await this.smsService.sendOtp(member.phone, code);
       return { method: 'sms', message: 'Code envoyé par SMS' };
     } else {
-      const token = Buffer.from(JSON.stringify({ email: email.toLowerCase(), code })).toString('base64url');
-      await this.otpRepo.save({ email: email.toLowerCase(), code, type: 'magic_link', expiresAt });
+      const token = randomBytes(32).toString('base64url');
+      const tokenHash = await bcrypt.hash(token, 10);
+      await this.otpRepo.save({
+        email: email.toLowerCase(),
+        code: tokenHash,
+        type: 'magic_link',
+        expiresAt,
+      });
       const frontendUrl = this.config.get('FRONTEND_URLS', '').split(',')[0].trim();
       const magicLink = `${frontendUrl}/auth/magic-link?token=${token}`;
       await this.mailService.sendMagicLink(member, magicLink);
@@ -77,14 +89,16 @@ export class MemberAuthService {
     const otp = await this.otpRepo.findOne({
       where: {
         email: dto.email.toLowerCase(),
-        code: dto.code,
-        usedAt: null,
+        type: 'sms',
+        usedAt: IsNull(),
         expiresAt: MoreThan(new Date()),
       },
       order: { createdAt: 'DESC' },
     });
 
-    if (!otp) throw new UnauthorizedException('Code invalide ou expiré');
+    if (!otp || !(await bcrypt.compare(dto.code, otp.code))) {
+      throw new UnauthorizedException('Code invalide ou expiré');
+    }
 
     otp.usedAt = new Date();
     await this.otpRepo.save(otp);
@@ -93,34 +107,29 @@ export class MemberAuthService {
   }
 
   async verifyMagicLink(dto: VerifyMagicLinkDto) {
-    let email: string;
-    let code: string;
-
-    try {
-      const decoded = JSON.parse(Buffer.from(dto.token, 'base64url').toString());
-      email = decoded.email;
-      code = decoded.code;
-    } catch {
-      throw new UnauthorizedException('Lien invalide');
-    }
-
-    const otp = await this.otpRepo.findOne({
+    const candidates = await this.otpRepo.find({
       where: {
-        email,
-        code,
         type: 'magic_link',
-        usedAt: null,
+        usedAt: IsNull(),
         expiresAt: MoreThan(new Date()),
       },
       order: { createdAt: 'DESC' },
+      take: 20,
     });
 
+    let otp: OtpCode | undefined;
+    for (const candidate of candidates) {
+      if (await bcrypt.compare(dto.token, candidate.code)) {
+        otp = candidate;
+        break;
+      }
+    }
     if (!otp) throw new UnauthorizedException('Lien expiré ou déjà utilisé');
 
     otp.usedAt = new Date();
     await this.otpRepo.save(otp);
 
-    return this.generateMemberToken(email);
+    return this.generateMemberToken(otp.email);
   }
 
   async register(dto: RegisterDto) {
@@ -142,12 +151,6 @@ export class MemberAuthService {
       role: 'member',
     });
 
-    return this.generateMemberToken(member.email);
-  }
-
-  async quickLogin(email: string) {
-    const member = await this.memberRepo.findOne({ where: { email: email.toLowerCase().trim() } });
-    if (!member) throw new UnauthorizedException('Email non trouvé');
     return this.generateMemberToken(member.email);
   }
 

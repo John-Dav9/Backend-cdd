@@ -1,14 +1,14 @@
 import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Req } from '@nestjs/common';
 import { Request } from 'express';
-import { Public } from '../auth/public.decorator';
+import { AdminOnly, Roles } from '../auth/roles.decorator';
 import { CreateRecordingDto } from './dto/create-recording.dto';
 import { ReplaysService } from './replays.service';
 
 @Controller('replays')
+@Roles('member', 'admin', 'super_admin')
 export class ReplaysController {
   constructor(private readonly service: ReplaysService) {}
 
-  @Public()
   @Get()
   findAllPublic() {
     return this.service.findAllPublic();
@@ -16,32 +16,36 @@ export class ReplaysController {
 
   // Admin — avant :id pour éviter conflit de route
   @Get('admin/all')
+  @AdminOnly()
   findAllAdmin() {
     return this.service.findAllAdmin();
   }
 
-  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+    return this.service.findOnePublic(id);
   }
 
   @Post()
+  @AdminOnly()
   create(@Body() dto: CreateRecordingDto) {
     return this.service.create(dto);
   }
 
   @Patch(':id')
+  @AdminOnly()
   update(@Param('id') id: string, @Body() dto: Partial<CreateRecordingDto>) {
     return this.service.update(id, dto);
   }
 
   @Patch(':id/toggle-public')
+  @AdminOnly()
   togglePublic(@Param('id') id: string) {
     return this.service.togglePublic(id);
   }
 
   @Delete(':id')
+  @AdminOnly()
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }
@@ -51,13 +55,11 @@ export class ReplaysController {
     return this.service.summarize(id);
   }
 
-  @Public()
   @Get(':id/recommendations')
   getRecommendations(@Param('id') id: string) {
-    return this.service.getRecommendations(id);
+    return this.service.getPublicRecommendations(id);
   }
 
-  @Public()
   @Get('podcast/feed.xml')
   @Header('Content-Type', 'application/rss+xml; charset=utf-8')
   async getPodcast(@Req() req: Request) {

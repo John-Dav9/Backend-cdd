@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Public } from '../auth/public.decorator';
+import { AdminOnly } from '../auth/roles.decorator';
 import { BibliothequeService } from './bibliotheque.service';
 import { CreateLivreDto } from './dto/create-livre.dto';
 
@@ -31,6 +32,7 @@ export class BibliothequeController {
 
   // Admin
   @Post()
+  @AdminOnly()
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'pdf', maxCount: 1 },
@@ -46,6 +48,7 @@ export class BibliothequeController {
   }
 
   @Delete(':id')
+  @AdminOnly()
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

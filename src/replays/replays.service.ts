@@ -28,6 +28,12 @@ export class ReplaysService {
     return r;
   }
 
+  async findOnePublic(id: string) {
+    const recording = await this.repo.findOne({ where: { id, isPublic: true } });
+    if (!recording) throw new NotFoundException('Enregistrement introuvable');
+    return recording;
+  }
+
   async create(dto: CreateRecordingDto) {
     const saved = await this.repo.save(this.repo.create({
       ...dto,
@@ -87,8 +93,8 @@ Format : liste numérotée de 5 points (1 à 2 phrases chacun).`;
     return { summary };
   }
 
-  async getRecommendations(id: string, limit = 4): Promise<Recording[]> {
-    const r = await this.findOne(id);
+  async getPublicRecommendations(id: string, limit = 4): Promise<Recording[]> {
+    const r = await this.findOnePublic(id);
     const qb = this.repo.createQueryBuilder('rec')
       .where('rec.isPublic = true AND rec.id != :id', { id })
       .orderBy('rec.publishedAt', 'DESC')

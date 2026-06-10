@@ -4,6 +4,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
+import { AdminOnly } from '../auth/roles.decorator';
 import { MarathonService } from './marathon.service';
 import { CreateMarathonDto } from './dto/create-marathon.dto';
 import { InscrireMarathonDto } from './dto/inscrire-marathon.dto';
@@ -16,26 +17,31 @@ export class MarathonController {
   // ─── Admin (protégé) ──────────────────────────────────────────────────────
 
   @Post()
+  @AdminOnly()
   creer(@Body() dto: CreateMarathonDto) {
     return this.service.creer(dto);
   }
 
   @Get('admin/all')
+  @AdminOnly()
   findAllAdmin() {
     return this.service.findAll(true);
   }
 
   @Get('admin/orphaned')
+  @AdminOnly()
   findOrphaned() {
     return this.service.findOrphaned();
   }
 
   @Get(':id/inscrits')
+  @AdminOnly()
   getInscrits(@Param('id') id: string) {
     return this.service.getInscrits(id);
   }
 
   @Get(':id/inscrits/csv')
+  @AdminOnly()
   async exportCSV(@Param('id') id: string, @Res() res: any) {
     const rows = await this.service.getInscrits(id);
     const marathon = await this.service.findOne(id);
@@ -54,27 +60,32 @@ export class MarathonController {
   }
 
   @Patch(':id/archiver')
+  @AdminOnly()
   archiver(@Param('id') id: string) {
     return this.service.archiver(id);
   }
 
   @Patch(':id/reactiver')
+  @AdminOnly()
   reactiver(@Param('id') id: string) {
     return this.service.reactiver(id);
   }
 
   @Delete(':id')
+  @AdminOnly()
   supprimer(@Param('id') id: string) {
     return this.service.supprimer(id);
   }
 
   @Post(':id/flyer')
+  @AdminOnly()
   @UseInterceptors(FileInterceptor('file'))
   uploadFlyer(@Param('id') id: string, @UploadedFile() file: any) {
     return this.service.uploadFlyer(id, file);
   }
 
   @Post('attestations-annuelles')
+  @AdminOnly()
   attestationsAnnuelles(@Body('annee') annee: number) {
     return this.service.envoyerAttestationsAnnuelles(annee);
   }

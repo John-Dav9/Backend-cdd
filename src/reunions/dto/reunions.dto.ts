@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateReunionDto {
   @IsString()
@@ -26,6 +26,10 @@ export class CreateReunionDto {
   @IsString()
   @IsOptional()
   recurrenceRule?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  lobbyEnabled?: boolean;
 }
 
 export class UpdateReunionDto {
@@ -52,10 +56,27 @@ export class UpdateReunionDto {
   @IsEnum(['scheduled', 'live', 'ended', 'cancelled'])
   @IsOptional()
   status?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isRecurring?: boolean;
+
+  @IsString()
+  @IsOptional()
+  recurrenceRule?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  lobbyEnabled?: boolean;
 }
 
 export class JoinReunionDto {
   @IsString()
   @IsOptional()
   displayName?: string;
+}
+
+export class AdmissionStatusDto {
+  @IsUUID()
+  participantId: string;
 }

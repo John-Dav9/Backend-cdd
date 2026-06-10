@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Param, Post } from '@nestjs/common';
 import { StreamingService, StreamTarget } from './streaming.service';
 import { MeetingGateway } from '../reunions/meeting.gateway';
+import { AdminOnly } from '../auth/roles.decorator';
 
+@AdminOnly()
 @Controller('streaming')
 export class StreamingController {
   constructor(
@@ -11,28 +13,33 @@ export class StreamingController {
 
   @Post('start')
   async start(@Body() body: { meetingId: string; jitsiRoomId: string; targets: StreamTarget[] }) {
-    const result = await this.streamingService.startStreaming(body.meetingId, body.jitsiRoomId, body.targets);
-    if (result.started) {
-      this.meetingGateway.broadcastStreamingStatus(body.meetingId, 'started',
-        body.targets.map(t => t.platform).join(', '));
+    this.streamingService.assertAvailable();
+    const target = this.streamingService.prepareTarget(body.targets);
+    const sent = this.meetingGateway.sendMediaCommand(body.meetingId, {
+      action: 'start',
+      mode: 'stream',
+      streamKey: target.rtmpStreamKey,
+    });
+    if (!sent) {
+      throw new ConflictException('Aucun modérateur connecté ne peut démarrer la diffusion.');
     }
-    return result;
+    return { started: true, status: 'starting', platform: target.platform };
   }
 
   @Post('stop')
   async stop(@Body() body: { meetingId: string }) {
-    const result = await this.streamingService.stopStreaming(body.meetingId);
-    if (result.stopped) {
-      this.meetingGateway.broadcastStreamingStatus(body.meetingId, 'stopped');
+    const sent = this.meetingGateway.sendMediaCommand(body.meetingId, {
+      action: 'stop',
+      mode: 'stream',
+    });
+    if (!sent) {
+      throw new ConflictException('Aucun modérateur connecté ne peut arrêter la diffusion.');
     }
-    return result;
+    return { stopped: true, status: 'stopping' };
   }
 
   @Get(':meetingId/status')
   status(@Param('meetingId') meetingId: string) {
-    return {
-      active: this.streamingService.isStreaming(meetingId),
-      targets: this.streamingService.getActiveTargets(meetingId),
-    };
+    return this.meetingGateway.getMediaState(meetingId, 'stream');
   }
 }

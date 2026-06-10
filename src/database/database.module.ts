@@ -22,6 +22,8 @@ import { Recording } from './entities/recording.entity';
 import { User } from './entities/user.entity';
 import { AuditLog } from './entities/audit-log.entity';
 import { CellGroup } from './entities/cell-group.entity';
+import { BaselineSchema1717977600000 } from './migrations/1717977600000-BaselineSchema';
+import { PushSubscriptionEntity } from './entities/push-subscription.entity';
 
 @Module({
   imports: [
@@ -40,8 +42,11 @@ import { CellGroup } from './entities/cell-group.entity';
           NewsletterSubscriber, Bibliotheque, EmailTemplate, Setting,
           Member, Meeting, MeetingParticipant, CommunitySettings, OtpCode, Message, Recording,
           AuditLog, CellGroup,
+          PushSubscriptionEntity,
         ],
-        synchronize: true,
+        synchronize: config.get<string>('DB_SYNCHRONIZE', 'false') === 'true',
+        migrations: [BaselineSchema1717977600000],
+        migrationsRun: true,
         logging: config.get('NODE_ENV') !== 'production',
       }),
       inject: [ConfigService],

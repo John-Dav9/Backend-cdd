@@ -1,16 +1,14 @@
 import { INestApplication } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { ActualitesController } from '../src/actualites/actualites.controller';
 import { ActualitesService } from '../src/actualites/actualites.service';
-import { FirebaseAuthGuard } from '../src/auth/firebase-auth.guard';
-import { FirebaseService } from '../src/firebase/firebase.service';
-import { SettingsController } from '../src/settings/settings.controller';
-import { SettingsService } from '../src/settings/settings.service';
-import { ConfigService } from '@nestjs/config';
+import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
+import { RolesGuard } from '../src/auth/roles.guard';
 
-describe('Auth + Admin routes (e2e)', () => {
+describe('JWT and role protected routes (e2e)', () => {
   let app: INestApplication;
 
   const actualitesServiceMock = {
@@ -21,55 +19,27 @@ describe('Auth + Admin routes (e2e)', () => {
     remove: jest.fn().mockResolvedValue({ message: 'ok' }),
   };
 
-  const settingsServiceMock = {
-    getTheme: jest.fn().mockResolvedValue({ brand: '#1D546C' }),
-    updateTheme: jest.fn().mockResolvedValue({ brand: '#1D546C' }),
-    uploadThemeImage: jest.fn().mockResolvedValue({ url: 'https://example.test/logo.png' }),
-    getCultes: jest.fn().mockResolvedValue([]),
-    updateCultes: jest.fn().mockResolvedValue([]),
-    getPage: jest.fn().mockResolvedValue({}),
-    updatePage: jest.fn().mockResolvedValue({}),
-    uploadPageImage: jest.fn().mockResolvedValue({ url: 'https://example.test/page.png' }),
-  };
-
-  const firebaseServiceMock = {
-    auth: {
-      verifyIdToken: jest.fn(async (token: string) => {
-        if (token === 'firebase-valid-token') {
-          return { uid: 'firebase-user', email: 'user@test.dev' };
-        }
-        throw new Error('invalid');
-      }),
-    },
-  };
-
-  const configValues: Record<string, string> = {
-    DEV_ADMIN_ENABLED: 'true',
-    DEV_ADMIN_TOKEN: 'dev-admin-token-change-me',
-    DEV_ADMIN_EMAIL: 'admin-dev@local.test',
-    NODE_ENV: 'development',
-  };
-
-  const configServiceMock = {
-    get: jest.fn((key: string, defaultValue?: string) => {
-      if (key in configValues) return configValues[key];
-      return defaultValue;
+  const jwtServiceMock = {
+    verifyAsync: jest.fn(async (token: string) => {
+      if (token === 'admin-token') {
+        return { sub: 'admin-id', email: 'admin@example.test', role: 'admin' };
+      }
+      if (token === 'member-token') {
+        return { sub: 'member-id', email: 'member@example.test', role: 'member', type: 'member' };
+      }
+      throw new Error('invalid token');
     }),
   };
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      controllers: [ActualitesController, SettingsController],
+      controllers: [ActualitesController],
       providers: [
         Reflector,
         { provide: ActualitesService, useValue: actualitesServiceMock },
-        { provide: SettingsService, useValue: settingsServiceMock },
-        { provide: FirebaseService, useValue: firebaseServiceMock },
-        { provide: ConfigService, useValue: configServiceMock },
-        {
-          provide: APP_GUARD,
-          useClass: FirebaseAuthGuard,
-        },
+        { provide: JwtService, useValue: jwtServiceMock },
+        { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
       ],
     }).compile();
 
@@ -81,41 +51,32 @@ describe('Auth + Admin routes (e2e)', () => {
     await app.close();
   });
 
-  it('allows public route without auth token', async () => {
+  it('allows a public route without a token', async () => {
     await request(app.getHttpServer()).get('/actualites').expect(200);
   });
 
-  it('blocks admin route without token', async () => {
+  it('rejects an admin route without a token', async () => {
     await request(app.getHttpServer()).get('/actualites/admin/all').expect(401);
   });
 
-  it('allows admin route with valid Firebase token', async () => {
+  it('rejects an invalid token', async () => {
     await request(app.getHttpServer())
       .get('/actualites/admin/all')
-      .set('Authorization', 'Bearer firebase-valid-token')
-      .expect(200);
+      .set('Authorization', 'Bearer invalid-token')
+      .expect(401);
   });
 
-  it('allows admin route with dev token from localhost only', async () => {
+  it('rejects a member token on an admin route', async () => {
     await request(app.getHttpServer())
       .get('/actualites/admin/all')
-      .set('Authorization', 'Bearer dev-admin-token-change-me')
-      .set('x-forwarded-for', '127.0.0.1')
-      .expect(200);
-  });
-
-  it('rejects dev token from non-localhost source', async () => {
-    await request(app.getHttpServer())
-      .get('/actualites/admin/all')
-      .set('Authorization', 'Bearer dev-admin-token-change-me')
-      .set('x-forwarded-for', '10.10.10.10')
+      .set('Authorization', 'Bearer member-token')
       .expect(403);
   });
 
-  it('protects critical admin settings update endpoint', async () => {
+  it('allows an admin token on an admin route', async () => {
     await request(app.getHttpServer())
-      .patch('/settings/theme')
-      .send({ brand: '#000000' })
-      .expect(401);
+      .get('/actualites/admin/all')
+      .set('Authorization', 'Bearer admin-token')
+      .expect(200);
   });
 });

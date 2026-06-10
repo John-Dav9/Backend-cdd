@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
+import { AdminOnly } from '../auth/roles.decorator';
 import { CreateTemoignageDto } from './dto/create-temoignage.dto';
 import { StatutTemoignage, TemoignagesService } from './temoignages.service';
 
@@ -23,11 +24,13 @@ export class TemoignagesController {
 
   // Admin
   @Get('admin/all')
+  @AdminOnly()
   findAll(@Query('statut') statut?: StatutTemoignage) {
     return this.service.findAll(statut);
   }
 
   @Patch(':id/moderer')
+  @AdminOnly()
   moderer(
     @Param('id') id: string,
     @Body('statut') statut: StatutTemoignage,
@@ -36,6 +39,7 @@ export class TemoignagesController {
   }
 
   @Delete(':id')
+  @AdminOnly()
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

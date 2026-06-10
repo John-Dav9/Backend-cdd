@@ -26,8 +26,14 @@ export class Meeting {
   @Column({ name: 'is_recurring', default: false })
   isRecurring: boolean;
 
+  @Column({ name: 'lobby_enabled', default: false })
+  lobbyEnabled: boolean;
+
   @Column({ name: 'recurrence_rule', nullable: true })
   recurrenceRule: string;
+
+  @Column({ name: 'recurrence_series_id', nullable: true })
+  recurrenceSeriesId: string;
 
   @Column({ name: 'jitsi_room_id', unique: true })
   jitsiRoomId: string;

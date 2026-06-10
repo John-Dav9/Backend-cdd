@@ -12,7 +12,9 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { MemberAuthService } from './member-auth.service';
+import { RolesGuard } from './roles.guard';
 import { SmsService } from './sms.service';
+import { AdminSessionService } from './admin-session.service';
 
 @Module({
   imports: [
@@ -32,11 +34,16 @@ import { SmsService } from './sms.service';
     AuthService,
     MemberAuthService,
     SmsService,
+    AdminSessionService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
-  exports: [JwtModule, MemberAuthService],
+  exports: [JwtModule, MemberAuthService, AdminSessionService],
 })
 export class AuthModule {}

@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
+import { AdminOnly } from '../auth/roles.decorator';
 import { NewsletterService } from './newsletter.service';
 
 @Controller('newsletter')
@@ -15,11 +16,13 @@ export class NewsletterController {
   }
 
   @Get('subscribers')
+  @AdminOnly()
   findAll() {
     return this.service.findAll();
   }
 
   @Delete('subscribers/:id')
+  @AdminOnly()
   desabonner(@Param('id') id: string) {
     return this.service.desabonner(id);
   }

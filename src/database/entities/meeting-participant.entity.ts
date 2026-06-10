@@ -2,6 +2,8 @@ import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGenerat
 import { Meeting } from './meeting.entity';
 import { Member } from './member.entity';
 
+export type AdmissionStatus = 'pending' | 'admitted' | 'rejected';
+
 @Entity('meeting_participants')
 export class MeetingParticipant {
   @PrimaryGeneratedColumn('uuid')
@@ -24,6 +26,9 @@ export class MeetingParticipant {
   @Column({ name: 'display_name' })
   displayName: string;
 
+  @Column({ name: 'jitsi_participant_id', nullable: true })
+  jitsiParticipantId: string;
+
   @CreateDateColumn({ name: 'joined_at' })
   joinedAt: Date;
 
@@ -35,6 +40,12 @@ export class MeetingParticipant {
 
   @Column({ name: 'was_admin', default: false })
   wasAdmin: boolean;
+
+  @Column({ name: 'admission_status', default: 'admitted' })
+  admissionStatus: AdmissionStatus;
+
+  @Column({ name: 'admitted_at', nullable: true })
+  admittedAt: Date;
 
   @Column({ name: 'reconnect_token', nullable: true })
   reconnectToken: string;
