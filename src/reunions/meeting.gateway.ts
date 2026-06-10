@@ -400,7 +400,12 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   private requireAdmin(client: Socket): void {
     const role = client.data.user?.role;
-    if (role !== 'admin' && role !== 'super_admin') {
+    const joinedMeeting = client.data.user?.meetingModeratorFor;
+    if (
+      role !== 'admin' &&
+      role !== 'super_admin' &&
+      !(role === 'meeting_moderator' && joinedMeeting && client.rooms.has(joinedMeeting))
+    ) {
       throw new WsException('Action réservée aux modérateurs.');
     }
   }
@@ -415,7 +420,14 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     for (const socketId of this.rooms.get(meetingId) ?? []) {
       const socket = this.server.sockets.sockets.get(socketId);
       const role = socket?.data.user?.role;
-      if (socket && (role === 'admin' || role === 'super_admin')) return socket;
+      if (
+        socket &&
+        (
+          role === 'admin' ||
+          role === 'super_admin' ||
+          (role === 'meeting_moderator' && socket.data.user?.meetingModeratorFor === meetingId)
+        )
+      ) return socket;
     }
     return undefined;
   }

@@ -1,6 +1,6 @@
 import { Body, ConflictException, Controller, Delete, Get, Param, Post, Put, Query, Request } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
-import { AdminOnly, Roles } from '../auth/roles.decorator';
+import { AdminOnly, MeetingAdminOnly, Roles } from '../auth/roles.decorator';
 import { AdmissionStatusDto, CreateReunionDto, JoinReunionDto, UpdateReunionDto } from './dto/reunions.dto';
 import { ReunionsService } from './reunions.service';
 import { MeetingGateway } from './meeting.gateway';
@@ -70,13 +70,13 @@ export class ReunionsController {
   }
 
   @Post(':id/join')
-  @Roles('member', 'admin', 'super_admin')
+  @Roles('visitor', 'member', 'meeting_moderator', 'admin', 'super_admin')
   join(@Param('id') id: string, @Body() dto: JoinReunionDto, @Request() req: any) {
     return this.reunionsService.join(id, req.user.sub, dto, req.user);
   }
 
   @Post(':id/admission/status')
-  @Roles('member', 'admin', 'super_admin')
+  @Roles('visitor', 'member', 'meeting_moderator', 'admin', 'super_admin')
   admissionStatus(
     @Param('id') id: string,
     @Body() dto: AdmissionStatusDto,
@@ -86,25 +86,25 @@ export class ReunionsController {
   }
 
   @Get(':id/waiting-participants')
-  @AdminOnly()
+  @MeetingAdminOnly()
   getWaitingParticipants(@Param('id') id: string) {
     return this.reunionsService.getWaitingParticipants(id);
   }
 
   @Post(':id/admit/:participantId')
-  @AdminOnly()
+  @MeetingAdminOnly()
   admitParticipant(@Param('id') id: string, @Param('participantId') participantId: string) {
     return this.reunionsService.admitParticipant(id, participantId);
   }
 
   @Post(':id/reject/:participantId')
-  @AdminOnly()
+  @MeetingAdminOnly()
   rejectParticipant(@Param('id') id: string, @Param('participantId') participantId: string) {
     return this.reunionsService.rejectParticipant(id, participantId);
   }
 
   @Post(':id/end')
-  @AdminOnly()
+  @MeetingAdminOnly()
   async end(@Param('id') id: string) {
     const result = await this.reunionsService.end(id);
     this.meetingGateway.broadcastMeetingEnded(id);
@@ -112,7 +112,7 @@ export class ReunionsController {
   }
 
   @Post(':id/record/start')
-  @AdminOnly()
+  @MeetingAdminOnly()
   async startRecording(@Param('id') id: string) {
     await this.reunionsService.findOne(id);
     this.jitsiService.assertJibriAvailable();
@@ -123,7 +123,7 @@ export class ReunionsController {
   }
 
   @Post(':id/record/stop')
-  @AdminOnly()
+  @MeetingAdminOnly()
   async stopRecording(@Param('id') id: string) {
     await this.reunionsService.findOne(id);
     if (!this.meetingGateway.sendMediaCommand(id, { action: 'stop', mode: 'file' })) {
@@ -133,13 +133,13 @@ export class ReunionsController {
   }
 
   @Get(':id/record/status')
-  @AdminOnly()
+  @MeetingAdminOnly()
   recordingStatus(@Param('id') id: string) {
     return this.meetingGateway.getMediaState(id, 'file');
   }
 
   @Post(':id/heartbeat')
-  @Roles('member', 'admin', 'super_admin')
+  @Roles('visitor', 'member', 'meeting_moderator', 'admin', 'super_admin')
   heartbeat(
     @Param('id') id: string,
     @Body('participantId') participantId: string,
@@ -149,7 +149,7 @@ export class ReunionsController {
   }
 
   @Post(':id/participant-session')
-  @Roles('member', 'admin', 'super_admin')
+  @Roles('visitor', 'member', 'meeting_moderator', 'admin', 'super_admin')
   registerParticipantSession(
     @Param('id') id: string,
     @Body() body: { participantId: string; jitsiParticipantId: string },
@@ -164,44 +164,68 @@ export class ReunionsController {
   }
 
   @Post(':id/reconnect')
-  @Roles('member', 'admin', 'super_admin')
+  @Roles('visitor', 'member', 'meeting_moderator', 'admin', 'super_admin')
   reconnect(@Param('id') id: string, @Body('token') token: string, @Request() req: any) {
     return this.reunionsService.reconnect(id, req.user, token);
   }
 
   @Get(':id/participants')
-  @AdminOnly()
+  @MeetingAdminOnly()
   getParticipants(@Param('id') id: string) {
     return this.reunionsService.getParticipants(id);
   }
 
   @Get(':id/attendance')
-  @AdminOnly()
+  @MeetingAdminOnly()
   getAttendance(@Param('id') id: string) {
     return this.reunionsService.getAttendance(id);
   }
 
   @Post(':id/send-reminders')
-  @AdminOnly()
+  @MeetingAdminOnly()
   sendReminders(@Param('id') id: string) {
     return this.reunionsService.sendReminders(id);
   }
 
   @Post(':id/mute/:participantJitsiId')
-  @AdminOnly()
+  @MeetingAdminOnly()
   muteParticipant(@Param('id') id: string, @Param('participantJitsiId') participantJitsiId: string) {
     return this.reunionsService.muteParticipant(id, participantJitsiId);
   }
 
   @Post(':id/kick/:participantId')
-  @AdminOnly()
+  @MeetingAdminOnly()
   kickParticipant(@Param('id') id: string, @Param('participantId') participantId: string) {
     return this.reunionsService.kickParticipant(id, participantId);
   }
 
   @Post(':id/grant-moderator/:memberId')
-  @AdminOnly()
+  @MeetingAdminOnly()
   grantModerator(@Param('id') id: string, @Param('memberId') memberId: string) {
     return this.reunionsService.grantModerator(id, memberId);
+  }
+
+  @Post(':id/invitations')
+  @AdminOnly()
+  createModeratorInvite(@Param('id') id: string, @Body('memberId') memberId: string) {
+    return this.reunionsService.createModeratorInvite(id, memberId);
+  }
+
+  @Get(':id/invitations')
+  @AdminOnly()
+  listModeratorInvites(@Param('id') id: string) {
+    return this.reunionsService.listModeratorInvites(id);
+  }
+
+  @Delete(':id/invitations/:inviteId')
+  @AdminOnly()
+  revokeModeratorInvite(@Param('id') id: string, @Param('inviteId') inviteId: string) {
+    return this.reunionsService.revokeModeratorInvite(id, inviteId);
+  }
+
+  @Public()
+  @Post('invitations/accept')
+  acceptModeratorInvite(@Body('token') token: string) {
+    return this.reunionsService.acceptModeratorInvite(token);
   }
 }

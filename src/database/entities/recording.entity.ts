@@ -21,6 +21,9 @@ export class Recording {
   @Column({ name: 'video_url', nullable: true })
   videoUrl: string;
 
+  @Column({ name: 'storage_path', nullable: true })
+  storagePath: string;
+
   @Column({ name: 'thumbnail_url', nullable: true })
   thumbnailUrl: string;
 

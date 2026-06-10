@@ -16,7 +16,7 @@ import { Member } from '../database/entities/member.entity';
 import { OtpCode } from '../database/entities/otp-code.entity';
 import { MailService } from '../mail/mail.service';
 import { SmsService } from './sms.service';
-import { CheckEmailDto, RegisterDto, VerifyMagicLinkDto, VerifyOtpDto } from './dto/member-auth.dto';
+import { CheckEmailDto, GuestAccessDto, RegisterDto, VerifyMagicLinkDto, VerifyOtpDto } from './dto/member-auth.dto';
 
 @Injectable()
 export class MemberAuthService {
@@ -151,6 +151,18 @@ export class MemberAuthService {
       role: 'member',
     });
 
+    return this.generateMemberToken(member.email);
+  }
+
+  async createGuest(dto: GuestAccessDto) {
+    const names = dto.displayName.trim().split(/\s+/);
+    const member = await this.memberRepo.save({
+      email: `guest-${randomBytes(16).toString('hex')}@visitor.cmciea.local`,
+      firstName: names[0],
+      lastName: names.slice(1).join(' '),
+      source: 'invitation',
+      role: 'visitor',
+    });
     return this.generateMemberToken(member.email);
   }
 

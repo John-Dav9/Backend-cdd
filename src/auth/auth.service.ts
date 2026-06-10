@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { randomInt } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import { IsNull, MoreThan, Repository } from 'typeorm';
 import { OtpCode } from '../database/entities/otp-code.entity';
 import { User } from '../database/entities/user.entity';
@@ -133,7 +133,7 @@ export class AuthService implements OnModuleInit {
   }
 
   private async generateAccessToken(user: User) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const payload = { sub: user.id, email: user.email, role: user.role, jti: randomUUID() };
     const token = await this.jwtService.signAsync(payload);
     return { access_token: token, role: user.role, email: user.email };
   }

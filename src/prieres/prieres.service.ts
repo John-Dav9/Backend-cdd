@@ -13,18 +13,20 @@ export class PrieresService {
     private mail: MailService,
   ) {}
 
-  async soumettre(data: { prenom: string; anonyme: boolean; sujet: string; message: string; email?: string }) {
+  async soumettre(data: { prenom?: string; anonyme?: boolean; sujet: string; message: string; email?: string }) {
+    const anonyme = data.anonyme ?? false;
+    const prenom = data.prenom?.trim() || 'Anonyme';
     const saved = await this.repo.save(this.repo.create({
-      prenom:  data.anonyme ? 'Anonyme' : data.prenom,
-      anonyme: data.anonyme,
+      prenom:  anonyme ? 'Anonyme' : prenom,
+      anonyme,
       sujet:   data.sujet,
       message: data.message,
-      email:   data.anonyme ? undefined : data.email,
+      email:   anonyme ? undefined : data.email,
       statut:  'en_attente',
     }));
 
-    if (!data.anonyme && data.email) {
-      await this.mail.sendConfirmationPriere(data.email, data.prenom, data.sujet).catch(() => {});
+    if (!anonyme && data.email) {
+      await this.mail.sendConfirmationPriere(data.email, prenom, data.sujet).catch(() => {});
     }
 
     return { id: saved.id, success: true };

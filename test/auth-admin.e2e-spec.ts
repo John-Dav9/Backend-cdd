@@ -7,6 +7,7 @@ import { ActualitesController } from '../src/actualites/actualites.controller';
 import { ActualitesService } from '../src/actualites/actualites.service';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/roles.guard';
+import { TokenRevocationService } from '../src/auth/token-revocation.service';
 
 describe('JWT and role protected routes (e2e)', () => {
   let app: INestApplication;
@@ -22,7 +23,10 @@ describe('JWT and role protected routes (e2e)', () => {
   const jwtServiceMock = {
     verifyAsync: jest.fn(async (token: string) => {
       if (token === 'admin-token') {
-        return { sub: 'admin-id', email: 'admin@example.test', role: 'admin' };
+        return { sub: 'admin-id', email: 'admin@example.test', role: 'admin', jti: 'active-jti' };
+      }
+      if (token === 'revoked-admin-token') {
+        return { sub: 'admin-id', email: 'admin@example.test', role: 'admin', jti: 'revoked-jti' };
       }
       if (token === 'member-token') {
         return { sub: 'member-id', email: 'member@example.test', role: 'member', type: 'member' };
@@ -38,6 +42,10 @@ describe('JWT and role protected routes (e2e)', () => {
         Reflector,
         { provide: ActualitesService, useValue: actualitesServiceMock },
         { provide: JwtService, useValue: jwtServiceMock },
+        {
+          provide: TokenRevocationService,
+          useValue: { isRevoked: jest.fn(async (jti: string) => jti === 'revoked-jti') },
+        },
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
@@ -71,6 +79,13 @@ describe('JWT and role protected routes (e2e)', () => {
       .get('/actualites/admin/all')
       .set('Authorization', 'Bearer member-token')
       .expect(403);
+  });
+
+  it('rejects a revoked admin session', async () => {
+    await request(app.getHttpServer())
+      .get('/actualites/admin/all')
+      .set('Authorization', 'Bearer revoked-admin-token')
+      .expect(401);
   });
 
   it('allows an admin token on an admin route', async () => {

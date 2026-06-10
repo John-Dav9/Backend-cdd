@@ -1,9 +1,9 @@
 import { Body, ConflictException, Controller, Get, Param, Post } from '@nestjs/common';
 import { StreamingService, StreamTarget } from './streaming.service';
 import { MeetingGateway } from '../reunions/meeting.gateway';
-import { AdminOnly } from '../auth/roles.decorator';
+import { MeetingAdminOnly } from '../auth/roles.decorator';
 
-@AdminOnly()
+@MeetingAdminOnly()
 @Controller('streaming')
 export class StreamingController {
   constructor(
@@ -14,7 +14,7 @@ export class StreamingController {
   @Post('start')
   async start(@Body() body: { meetingId: string; jitsiRoomId: string; targets: StreamTarget[] }) {
     this.streamingService.assertAvailable();
-    const target = this.streamingService.prepareTarget(body.targets);
+    const target = await this.streamingService.prepareTarget(body.meetingId, body.targets);
     const sent = this.meetingGateway.sendMediaCommand(body.meetingId, {
       action: 'start',
       mode: 'stream',
@@ -35,6 +35,7 @@ export class StreamingController {
     if (!sent) {
       throw new ConflictException('Aucun modérateur connecté ne peut arrêter la diffusion.');
     }
+    await this.streamingService.stopRelay(body.meetingId);
     return { stopped: true, status: 'stopping' };
   }
 

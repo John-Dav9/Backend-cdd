@@ -46,14 +46,17 @@ describe('ReunionsService waiting room', () => {
     jitsiService = {
       generateToken: jest.fn().mockReturnValue('jitsi-token'),
       getJitsiUrl: jest.fn().mockReturnValue('https://meet.example.test'),
+      getDialIn: jest.fn().mockReturnValue(null),
     };
     service = new ReunionsService(
       meetingRepo as any,
       participantRepo as any,
+      {} as any,
       memberRepo as any,
       jitsiService,
       {} as any,
       { save: jest.fn() } as any,
+      { signAsync: jest.fn() } as any,
     );
   });
 

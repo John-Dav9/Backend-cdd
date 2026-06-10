@@ -15,6 +15,8 @@ import { MemberAuthService } from './member-auth.service';
 import { RolesGuard } from './roles.guard';
 import { SmsService } from './sms.service';
 import { AdminSessionService } from './admin-session.service';
+import { TokenRevocationService } from './token-revocation.service';
+import { MeetingScopeGuard } from './meeting-scope.guard';
 
 @Module({
   imports: [
@@ -35,6 +37,8 @@ import { AdminSessionService } from './admin-session.service';
     MemberAuthService,
     SmsService,
     AdminSessionService,
+    TokenRevocationService,
+    MeetingScopeGuard,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -43,7 +47,11 @@ import { AdminSessionService } from './admin-session.service';
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
+    {
+      provide: APP_GUARD,
+      useClass: MeetingScopeGuard,
+    },
   ],
-  exports: [JwtModule, MemberAuthService, AdminSessionService],
+  exports: [JwtModule, MemberAuthService, AdminSessionService, TokenRevocationService],
 })
 export class AuthModule {}

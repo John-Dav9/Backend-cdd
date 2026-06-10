@@ -95,6 +95,12 @@ export class BaselineSchema1717977600000 implements MigrationInterface {
         "admitted_at" timestamp, "reconnect_token" varchar,
         "disconnect_count" integer NOT NULL DEFAULT 0
       )`,
+      `CREATE TABLE IF NOT EXISTS "meeting_invites" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "meeting_id" uuid NOT NULL,
+        "member_id" uuid NOT NULL, "token_hash" varchar NOT NULL, "expires_at" timestamp NOT NULL,
+        "revoked_at" timestamp, "last_used_at" timestamp,
+        "created_at" timestamp NOT NULL DEFAULT now()
+      )`,
       `CREATE TABLE IF NOT EXISTS "messages" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "title" varchar NOT NULL, "speaker" varchar NOT NULL,
         "date" date NOT NULL, "video_id" varchar NOT NULL, "publie" boolean NOT NULL DEFAULT true,
@@ -117,7 +123,7 @@ export class BaselineSchema1717977600000 implements MigrationInterface {
       )`,
       `CREATE TABLE IF NOT EXISTS "recordings" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(), "meetingId" varchar, "title" varchar NOT NULL,
-        "description" text, "speakerName" varchar, "video_url" varchar, "thumbnail_url" varchar,
+        "description" text, "speakerName" varchar, "video_url" varchar, "storage_path" varchar, "thumbnail_url" varchar,
         "duration_seconds" integer, "tags" jsonb NOT NULL DEFAULT '[]',
         "isPublic" boolean NOT NULL DEFAULT false, "published_at" timestamp,
         "created_at" timestamp NOT NULL DEFAULT now(), "updated_at" timestamp NOT NULL DEFAULT now()
@@ -149,6 +155,7 @@ export class BaselineSchema1717977600000 implements MigrationInterface {
     await queryRunner.query(`ALTER TABLE "meeting_participants" ADD COLUMN IF NOT EXISTS "jitsi_participant_id" varchar`);
     await queryRunner.query(`ALTER TABLE "meeting_participants" ADD COLUMN IF NOT EXISTS "admission_status" varchar NOT NULL DEFAULT 'admitted'`);
     await queryRunner.query(`ALTER TABLE "meeting_participants" ADD COLUMN IF NOT EXISTS "admitted_at" timestamp`);
+    await queryRunner.query(`ALTER TABLE "recordings" ADD COLUMN IF NOT EXISTS "storage_path" varchar`);
     await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_marathon_email" ON "marathon_inscriptions" ("marathon_id", "email")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_otp_lookup" ON "otp_codes" ("email", "type", "expires_at")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_meeting_series" ON "meetings" ("recurrence_series_id", "start_time")`);
@@ -163,6 +170,10 @@ export class BaselineSchema1717977600000 implements MigrationInterface {
       'FOREIGN KEY ("meeting_id") REFERENCES "meetings"("id") ON DELETE CASCADE');
     await this.addForeignKey(queryRunner, 'meeting_participants', 'FK_participant_member',
       'FOREIGN KEY ("member_id") REFERENCES "members"("id") ON DELETE SET NULL');
+    await this.addForeignKey(queryRunner, 'meeting_invites', 'FK_invite_meeting',
+      'FOREIGN KEY ("meeting_id") REFERENCES "meetings"("id") ON DELETE CASCADE');
+    await this.addForeignKey(queryRunner, 'meeting_invites', 'FK_invite_member',
+      'FOREIGN KEY ("member_id") REFERENCES "members"("id") ON DELETE CASCADE');
     await this.addForeignKey(queryRunner, 'push_subscriptions', 'FK_push_member',
       'FOREIGN KEY ("member_id") REFERENCES "members"("id") ON DELETE CASCADE');
     await this.addForeignKey(queryRunner, 'mentorship_requests', 'FK_mentorship_requester',
@@ -173,7 +184,7 @@ export class BaselineSchema1717977600000 implements MigrationInterface {
 
   async down(queryRunner: QueryRunner): Promise<void> {
     const tables = [
-      'mentorship_requests', 'push_subscriptions', 'meeting_participants', 'meetings', 'community_settings', 'otp_codes', 'recordings',
+      'mentorship_requests', 'push_subscriptions', 'meeting_invites', 'meeting_participants', 'meetings', 'community_settings', 'otp_codes', 'recordings',
       'cell_groups', 'audit_logs', 'marathon_inscriptions', 'marathons', 'newsletter_subscribers',
       'bibliotheque', 'email_templates', 'inscriptions', 'actualites', 'annonces', 'messages',
       'prieres', 'temoignages', 'settings', 'members', 'users',

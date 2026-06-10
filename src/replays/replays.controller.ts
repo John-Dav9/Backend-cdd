@@ -1,13 +1,15 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { Request } from 'express';
 import { AdminOnly, Roles } from '../auth/roles.decorator';
 import { CreateRecordingDto } from './dto/create-recording.dto';
 import { ReplaysService } from './replays.service';
+import { ConfigService } from '@nestjs/config';
+import { Public } from '../auth/public.decorator';
 
 @Controller('replays')
 @Roles('member', 'admin', 'super_admin')
 export class ReplaysController {
-  constructor(private readonly service: ReplaysService) {}
+  constructor(private readonly service: ReplaysService, private readonly config: ConfigService) {}
 
   @Get()
   findAllPublic(@Query('limit') limit?: string) {
@@ -30,6 +32,16 @@ export class ReplaysController {
   @AdminOnly()
   create(@Body() dto: CreateRecordingDto) {
     return this.service.create(dto);
+  }
+
+  @Public()
+  @Post('jibri/finalize')
+  finalizeJibri(@Req() req: Request, @Body() body: { recordingPath: string; roomId: string }) {
+    const expected = this.config.get<string>('JIBRI_FINALIZE_SECRET')?.trim();
+    if (!expected || req.headers['x-jibri-secret'] !== expected) {
+      throw new UnauthorizedException('Signature Jibri invalide');
+    }
+    return this.service.finalizeJibri(body.recordingPath, body.roomId);
   }
 
   @Patch(':id')

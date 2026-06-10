@@ -10,6 +10,8 @@ import { CreateReunionDto, JoinReunionDto, UpdateReunionDto } from './dto/reunio
 import { JitsiService } from './jitsi.service';
 import { randomBytes, randomUUID } from 'crypto';
 import { AdminSessionService } from '../auth/admin-session.service';
+import { MeetingInvite } from '../database/entities/meeting-invite.entity';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class ReunionsService {
@@ -18,10 +20,12 @@ export class ReunionsService {
   constructor(
     @InjectRepository(Meeting) private meetingRepo: Repository<Meeting>,
     @InjectRepository(MeetingParticipant) private participantRepo: Repository<MeetingParticipant>,
+    @InjectRepository(MeetingInvite) private inviteRepo: Repository<MeetingInvite>,
     @InjectRepository(Member) private memberRepo: Repository<Member>,
     private jitsiService: JitsiService,
     private mailService: MailService,
     private adminSessions: AdminSessionService,
+    private jwtService: JwtService,
   ) {}
 
   async findAll() {
@@ -160,6 +164,19 @@ export class ReunionsService {
     const meeting = await this.findOne(id);
     if (meeting.status === 'cancelled') throw new ForbiddenException('Cette réunion a été annulée');
     if (meeting.status === 'ended') throw new ForbiddenException('Cette réunion est terminée');
+    if (
+      jwtUser?.role === 'visitor' &&
+      jwtUser?.meetingModeratorFor !== id &&
+      !meeting.isPublic
+    ) {
+      throw new ForbiddenException('Cette réunion est réservée aux membres.');
+    }
+    if (
+      jwtUser?.role === 'meeting_moderator' &&
+      jwtUser?.meetingModeratorFor !== id
+    ) {
+      throw new ForbiddenException('Ce lien est limité à une autre réunion.');
+    }
 
     const isAdminUser = jwtUser?.type !== 'member';
     const persistedMember = await this.memberRepo.findOne({ where: { id: userId } });
@@ -177,7 +194,8 @@ export class ReunionsService {
     }
 
     const isModerator = member.role === 'admin' || member.role === 'super_admin'
-      || jwtUser?.role === 'admin' || jwtUser?.role === 'super_admin';
+      || jwtUser?.role === 'admin' || jwtUser?.role === 'super_admin'
+      || jwtUser?.meetingModeratorFor === id;
     const displayName = dto.displayName || `${member.firstName} ${member.lastName}`.trim();
     const realMemberId = persistedMember ? userId : null;
     const requiresAdmission = meeting.lobbyEnabled && !isModerator;
@@ -218,6 +236,101 @@ export class ReunionsService {
     return this.completeAdmission(meeting, participant, member, isModerator, userId, jwtUser);
   }
 
+  async createModeratorInvite(meetingId: string, memberId: string) {
+    const meeting = await this.findOne(meetingId);
+    const member = await this.memberRepo.findOne({ where: { id: memberId, isActive: true } });
+    if (!member) throw new NotFoundException('Responsable introuvable');
+
+    const secret = randomBytes(32).toString('base64url');
+    const fallbackExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const meetingExpiry = meeting.endTime
+      ? new Date(new Date(meeting.endTime).getTime() + 12 * 60 * 60 * 1000)
+      : fallbackExpiry;
+    const expiresAt = meetingExpiry > new Date() ? meetingExpiry : fallbackExpiry;
+    const invite = await this.inviteRepo.save({
+      meetingId,
+      memberId,
+      tokenHash: await bcrypt.hash(secret, 10),
+      expiresAt,
+    });
+    return {
+      id: invite.id,
+      token: `${invite.id}.${secret}`,
+      expiresAt,
+      member: {
+        id: member.id,
+        firstName: member.firstName,
+        lastName: member.lastName,
+      },
+    };
+  }
+
+  async listModeratorInvites(meetingId: string) {
+    await this.findOne(meetingId);
+    const invites = await this.inviteRepo.find({
+      where: { meetingId },
+      order: { createdAt: 'DESC' },
+    });
+    const members = await this.memberRepo.findByIds(invites.map(invite => invite.memberId));
+    return invites.map(invite => ({
+      id: invite.id,
+      expiresAt: invite.expiresAt,
+      revokedAt: invite.revokedAt,
+      lastUsedAt: invite.lastUsedAt,
+      member: members.find(member => member.id === invite.memberId),
+    }));
+  }
+
+  async revokeModeratorInvite(meetingId: string, inviteId: string) {
+    const invite = await this.inviteRepo.findOne({ where: { id: inviteId, meetingId } });
+    if (!invite) throw new NotFoundException('Invitation introuvable');
+    invite.revokedAt = new Date();
+    await this.inviteRepo.save(invite);
+    return { revoked: true };
+  }
+
+  async acceptModeratorInvite(rawToken: string) {
+    const [inviteId, secret] = rawToken?.split('.') ?? [];
+    if (!inviteId || !secret) throw new ForbiddenException('Invitation invalide');
+    const invite = await this.inviteRepo.findOne({ where: { id: inviteId } });
+    if (
+      !invite ||
+      invite.revokedAt ||
+      new Date(invite.expiresAt) <= new Date() ||
+      !await bcrypt.compare(secret, invite.tokenHash)
+    ) {
+      throw new ForbiddenException('Invitation invalide, expirée ou révoquée');
+    }
+    const meeting = await this.findOne(invite.meetingId);
+    if (meeting.status === 'cancelled' || meeting.status === 'ended') {
+      throw new ForbiddenException('Cette réunion n’est plus accessible');
+    }
+    const member = await this.memberRepo.findOne({ where: { id: invite.memberId, isActive: true } });
+    if (!member) throw new NotFoundException('Responsable introuvable');
+
+    invite.lastUsedAt = new Date();
+    await this.inviteRepo.save(invite);
+    const accessToken = await this.jwtService.signAsync({
+      sub: member.id,
+      email: member.email,
+      role: 'meeting_moderator',
+      type: 'member',
+      meetingModeratorFor: meeting.id,
+      jti: randomUUID(),
+    }, { expiresIn: '12h' });
+    return {
+      access_token: accessToken,
+      meetingId: meeting.id,
+      member: {
+        id: member.id,
+        firstName: member.firstName,
+        lastName: member.lastName,
+        email: member.email,
+        role: 'meeting_moderator',
+      },
+    };
+  }
+
   async getAdmissionStatus(meetingId: string, participantId: string, user: any) {
     const meeting = await this.findOne(meetingId);
     const participant = await this.participantRepo.findOne({
@@ -225,7 +338,8 @@ export class ReunionsService {
       relations: ['member'],
     });
     if (!participant) throw new NotFoundException('Demande d’admission introuvable');
-    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+      || user?.meetingModeratorFor === meetingId;
     if (!isAdmin && participant.memberId !== user?.sub) {
       throw new ForbiddenException('Cette demande ne vous appartient pas.');
     }
@@ -313,6 +427,7 @@ export class ReunionsService {
       jitsiToken: this.jitsiService.generateToken(meeting.jitsiRoomId, member, isModerator),
       jitsiUrl: this.jitsiService.getJitsiUrl(),
       roomId: meeting.jitsiRoomId,
+      dialIn: this.jitsiService.getDialIn(),
       isModerator,
       reconnectToken,
       participantId: participant.id,
@@ -341,7 +456,8 @@ export class ReunionsService {
       where: { id: participantId, meetingId },
     });
     if (!participant) throw new NotFoundException('Participation introuvable');
-    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+      || user?.meetingModeratorFor === meetingId;
     if (!isAdmin && participant.memberId !== user?.sub) {
       throw new ForbiddenException('Cette participation ne vous appartient pas.');
     }
@@ -364,7 +480,8 @@ export class ReunionsService {
     });
     if (!participant) throw new NotFoundException('Participation introuvable');
 
-    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+      || user?.meetingModeratorFor === meetingId;
     if (!isAdmin && participant.memberId !== user?.sub) {
       throw new ForbiddenException('Cette participation ne vous appartient pas.');
     }
@@ -400,7 +517,8 @@ export class ReunionsService {
     if (!participant) {
       throw new ForbiddenException('Token de reconnexion invalide');
     }
-    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+      || user?.meetingModeratorFor === meetingId;
     if (!isAdmin && participant.memberId !== user?.sub) {
       throw new ForbiddenException('Cette session ne vous appartient pas.');
     }

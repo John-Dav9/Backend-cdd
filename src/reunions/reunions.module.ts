@@ -12,10 +12,11 @@ import { ReunionsScheduler } from './reunions.scheduler';
 import { ReunionsService } from './reunions.service';
 import { StatsController } from './reunions.stats';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { MeetingInvite } from '../database/entities/meeting-invite.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Meeting, MeetingParticipant, Member]),
+    TypeOrmModule.forFeature([Meeting, MeetingParticipant, MeetingInvite, Member]),
     MailModule,
     AuthModule,
     NotificationsModule,

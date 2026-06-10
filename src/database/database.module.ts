@@ -25,6 +25,7 @@ import { CellGroup } from './entities/cell-group.entity';
 import { BaselineSchema1717977600000 } from './migrations/1717977600000-BaselineSchema';
 import { PushSubscriptionEntity } from './entities/push-subscription.entity';
 import { MentorshipRequest } from './entities/mentorship-request.entity';
+import { MeetingInvite } from './entities/meeting-invite.entity';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { MentorshipRequest } from './entities/mentorship-request.entity';
           AuditLog, CellGroup,
           PushSubscriptionEntity,
           MentorshipRequest,
+          MeetingInvite,
         ],
         synchronize: config.get<string>('DB_SYNCHRONIZE', 'false') === 'true',
         migrations: [BaselineSchema1717977600000],

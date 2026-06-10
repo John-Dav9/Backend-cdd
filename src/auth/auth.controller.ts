@@ -3,9 +3,10 @@ import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsNotEmpty, IsString, Length } from 'class-validator';
 import { AuthService } from './auth.service';
 import { MemberAuthService } from './member-auth.service';
-import { CheckEmailDto, RegisterDto, SendOtpDto, VerifyMagicLinkDto, VerifyOtpDto } from './dto/member-auth.dto';
+import { CheckEmailDto, GuestAccessDto, RegisterDto, SendOtpDto, VerifyMagicLinkDto, VerifyOtpDto } from './dto/member-auth.dto';
 import { Public } from './public.decorator';
 import { AdminOnly } from './roles.decorator';
+import { TokenRevocationService } from './token-revocation.service';
 
 class LoginDto {
   @IsEmail()
@@ -41,6 +42,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private memberAuthService: MemberAuthService,
+    private tokenRevocation: TokenRevocationService,
   ) {}
 
   // ── Admin auth (inchangé) ──────────────────────────────────────────────────
@@ -63,6 +65,15 @@ export class AuthController {
   @AdminOnly()
   changePassword(@Request() req: any, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(req.user.sub, dto.currentPassword, dto.newPassword);
+  }
+
+  @Post('logout')
+  @AdminOnly()
+  async logout(@Request() req: any) {
+    if (req.user.jti && req.user.exp) {
+      await this.tokenRevocation.revoke(req.user.jti, req.user.exp);
+    }
+    return { loggedOut: true };
   }
 
   // ── Member auth (OTP / magic link) ────────────────────────────────────────
@@ -100,6 +111,13 @@ export class AuthController {
   @Post('register')
   register(@Body() dto: RegisterDto) {
     return this.memberAuthService.register(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('guest')
+  guest(@Body() dto: GuestAccessDto) {
+    return this.memberAuthService.createGuest(dto);
   }
 
   @Get('me')

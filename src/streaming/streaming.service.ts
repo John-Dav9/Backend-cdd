@@ -16,13 +16,13 @@ const RTMP_URLS: Record<string, string> = {
 export class StreamingService {
   constructor(private config: ConfigService) {}
 
-  prepareTarget(targets: StreamTarget[]): { platform: string; rtmpStreamKey: string } {
+  async prepareTarget(
+    meetingId: string,
+    targets: StreamTarget[],
+  ): Promise<{ platform: string; rtmpStreamKey: string }> {
     const validTargets = (targets ?? []).filter(target => target?.streamKey?.trim());
-    if (validTargets.length !== 1) {
-      throw new BadRequestException(
-        'Jitsi diffuse vers une destination à la fois. Sélectionnez YouTube ou Facebook.',
-      );
-    }
+    if (!validTargets.length) throw new BadRequestException('Configurez au moins une destination.');
+    if (validTargets.length > 1) return this.prepareRelay(meetingId, validTargets);
 
     const target = validTargets[0];
     const baseUrl = target.rtmpUrl?.trim() || RTMP_URLS[target.platform];
@@ -38,6 +38,16 @@ export class StreamingService {
     };
   }
 
+  async stopRelay(meetingId: string) {
+    const controlUrl = this.config.get<string>('STREAM_RELAY_CONTROL_URL')?.trim();
+    if (!controlUrl) return;
+    await fetch(`${controlUrl.replace(/\/$/, '')}/stop`, {
+      method: 'POST',
+      headers: this.relayHeaders(),
+      body: JSON.stringify({ meetingId }),
+    }).catch(() => undefined);
+  }
+
   assertAvailable() {
     const enabled = this.config.get<string>('JIBRI_ENABLED', 'false').toLowerCase() === 'true';
     if (!enabled) {
@@ -45,5 +55,41 @@ export class StreamingService {
         'La diffusion Jitsi n’est pas configurée. Activez Jibri sur le serveur.',
       );
     }
+  }
+
+  private async prepareRelay(meetingId: string, targets: StreamTarget[]) {
+    const relayRtmp = this.config.get<string>('STREAM_RELAY_RTMP_URL')?.trim();
+    const controlUrl = this.config.get<string>('STREAM_RELAY_CONTROL_URL')?.trim();
+    if (!relayRtmp || !controlUrl) {
+      throw new BadRequestException(
+        'La diffusion simultanée nécessite un relais RTMP configuré.',
+      );
+    }
+    const destinations = targets.map(target => {
+      const baseUrl = target.rtmpUrl?.trim() || RTMP_URLS[target.platform];
+      if (!baseUrl) throw new BadRequestException('Destination RTMP invalide.');
+      return {
+        platform: target.platform,
+        url: `${baseUrl.replace(/\/$/, '')}/${target.streamKey.trim()}`,
+      };
+    });
+    const response = await fetch(`${controlUrl.replace(/\/$/, '')}/start`, {
+      method: 'POST',
+      headers: this.relayHeaders(),
+      body: JSON.stringify({ meetingId, destinations }),
+    });
+    if (!response.ok) throw new BadRequestException('Le relais RTMP a refusé la diffusion.');
+    return {
+      platform: 'multi',
+      rtmpStreamKey: `${relayRtmp.replace(/\/$/, '')}/${meetingId}`,
+    };
+  }
+
+  private relayHeaders() {
+    const secret = this.config.get<string>('STREAM_RELAY_SECRET')?.trim();
+    return {
+      'Content-Type': 'application/json',
+      ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+    };
   }
 }

@@ -90,4 +90,13 @@ export class JitsiService {
   getJitsiUrl(): string {
     return this.config.get('JITSI_URL', 'https://meet.cmciea-france.com');
   }
+
+  getDialIn() {
+    const number = this.config.get<string>('JITSI_DIAL_IN_NUMBER')?.trim();
+    if (!number) return null;
+    return {
+      number,
+      pin: this.config.get<string>('JITSI_DIAL_IN_PIN')?.trim() || null,
+    };
+  }
 }

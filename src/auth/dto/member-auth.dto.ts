@@ -45,3 +45,10 @@ export class RegisterDto {
   @IsOptional()
   city?: string;
 }
+
+export class GuestAccessDto {
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 100)
+  displayName: string;
+}
