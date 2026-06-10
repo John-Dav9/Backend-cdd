@@ -15,7 +15,7 @@ export class AuditInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const role = request.user?.role;
     const method = request.method?.toUpperCase();
-    if (!['admin', 'super_admin'].includes(role) || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    if (!['admin', 'super_admin', 'meeting_moderator'].includes(role) || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
       return next.handle();
     }
 

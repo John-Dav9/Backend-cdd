@@ -17,11 +17,15 @@ describe('ReunionsService waiting room', () => {
   } as any;
 
   let participant: any;
+  let invite: any;
   let service: ReunionsService;
   let jitsiService: any;
+  let inviteRepo: any;
+  let jwtService: any;
 
   beforeEach(() => {
     participant = null;
+    invite = null;
     const meetingRepo = {
       findOne: jest.fn().mockImplementation(async () => meeting),
       save: jest.fn(async (value: any) => Object.assign(meeting, value)),
@@ -41,7 +45,19 @@ describe('ReunionsService waiting room', () => {
       count: jest.fn().mockResolvedValue(1),
     };
     const memberRepo = {
-      findOne: jest.fn().mockResolvedValue(member),
+      findOne: jest.fn().mockImplementation(async ({ where }: any) =>
+        where.id === member.id ? member : null),
+    };
+    inviteRepo = {
+      save: jest.fn().mockImplementation(async (value: any) => {
+        invite = Object.assign(invite ?? { id: 'invite-id' }, value);
+        return invite;
+      }),
+      findOne: jest.fn().mockImplementation(async ({ where }: any) =>
+        invite?.id === where.id ? invite : null),
+    };
+    jwtService = {
+      signAsync: jest.fn().mockResolvedValue('scoped-access-token'),
     };
     jitsiService = {
       generateToken: jest.fn().mockReturnValue('jitsi-token'),
@@ -51,12 +67,32 @@ describe('ReunionsService waiting room', () => {
     service = new ReunionsService(
       meetingRepo as any,
       participantRepo as any,
-      {} as any,
+      inviteRepo,
       memberRepo as any,
       jitsiService,
       {} as any,
       { save: jest.fn() } as any,
-      { signAsync: jest.fn() } as any,
+      jwtService,
+    );
+  });
+
+  it('issues a revocable moderator token scoped to one meeting', async () => {
+    const created: any = await service.createModeratorInvite(meeting.id, member.id);
+
+    expect(created.token).toMatch(/^invite-id\./);
+    expect(invite.tokenHash).not.toContain(created.token.split('.')[1]);
+
+    const accepted: any = await service.acceptModeratorInvite(created.token);
+
+    expect(accepted.access_token).toBe('scoped-access-token');
+    expect(accepted.meetingId).toBe(meeting.id);
+    expect(jwtService.signAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sub: member.id,
+        role: 'meeting_moderator',
+        meetingModeratorFor: meeting.id,
+      }),
+      { expiresIn: '12h' },
     );
   });
 
@@ -82,5 +118,34 @@ describe('ReunionsService waiting room', () => {
     expect(admitted.jitsiToken).toBe('jitsi-token');
     expect(admitted.roomId).toBe(meeting.jitsiRoomId);
     expect(jitsiService.generateToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the primary administrator identity instead of a cached member identity', async () => {
+    const admitted: any = await service.join(
+      meeting.id,
+      'admin-id',
+      {},
+      {
+        sub: 'admin-id',
+        email: 'admin@cmciea-france.com',
+        name: 'Administrateur principal',
+        role: 'super_admin',
+      },
+    );
+
+    expect(admitted.isModerator).toBe(true);
+    expect(admitted.displayName).toBe('Administrateur principal');
+    expect(admitted.email).toBe('admin@cmciea-france.com');
+    expect(admitted.role).toBe('super_admin');
+    expect(jitsiService.generateToken).toHaveBeenCalledWith(
+      meeting.jitsiRoomId,
+      expect.objectContaining({
+        firstName: 'Administrateur',
+        lastName: 'principal',
+        email: 'admin@cmciea-france.com',
+        role: 'super_admin',
+      }),
+      true,
+    );
   });
 });

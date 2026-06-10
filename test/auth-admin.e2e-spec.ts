@@ -2,12 +2,15 @@ import { INestApplication } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import * as request from 'supertest';
 import { ActualitesController } from '../src/actualites/actualites.controller';
 import { ActualitesService } from '../src/actualites/actualites.service';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
 import { RolesGuard } from '../src/auth/roles.guard';
 import { TokenRevocationService } from '../src/auth/token-revocation.service';
+import { Member } from '../src/database/entities/member.entity';
+import { User } from '../src/database/entities/user.entity';
 
 describe('JWT and role protected routes (e2e)', () => {
   let app: INestApplication;
@@ -45,6 +48,34 @@ describe('JWT and role protected routes (e2e)', () => {
         {
           provide: TokenRevocationService,
           useValue: { isRevoked: jest.fn(async (jti: string) => jti === 'revoked-jti') },
+        },
+        {
+          provide: getRepositoryToken(Member),
+          useValue: {
+            findOne: jest.fn(async ({ where }: any) => where.id === 'member-id'
+              ? {
+                  id: 'member-id',
+                  firstName: 'Jean',
+                  lastName: 'Membre',
+                  email: 'member@example.test',
+                  role: 'member',
+                  isActive: true,
+                }
+              : null),
+          },
+        },
+        {
+          provide: getRepositoryToken(User),
+          useValue: {
+            findOne: jest.fn(async ({ where }: any) => where.id === 'admin-id'
+              ? {
+                  id: 'admin-id',
+                  email: 'admin@example.test',
+                  fullName: 'Administrateur principal',
+                  role: 'super_admin',
+                }
+              : null),
+          },
         },
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },

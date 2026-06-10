@@ -31,14 +31,32 @@ export class AuthService implements OnModuleInit {
   async onModuleInit() {
     const adminEmail = this.config.get<string>('ADMIN_EMAIL');
     const adminPassword = this.config.get<string>('ADMIN_PASSWORD');
+    const adminDisplayName = this.config.get<string>(
+      'ADMIN_DISPLAY_NAME',
+      'Administrateur principal',
+    );
 
     if (!adminEmail || !adminPassword) return;
 
-    const exists = await this.userRepo.findOne({ where: { email: adminEmail } });
+    const normalizedEmail = adminEmail.toLowerCase();
+    const exists = await this.userRepo.findOne({ where: { email: normalizedEmail } });
     if (!exists) {
       const hash = await bcrypt.hash(adminPassword, 12);
-      await this.userRepo.save({ email: adminEmail, passwordHash: hash, fullName: 'Administrateur', role: 'admin' });
-      this.logger.log(`Compte admin créé : ${adminEmail}`);
+      await this.userRepo.save({
+        email: normalizedEmail,
+        passwordHash: hash,
+        fullName: adminDisplayName,
+        role: 'super_admin',
+      });
+      this.logger.log(`Compte administrateur principal créé : ${normalizedEmail}`);
+      return;
+    }
+
+    if (exists.role !== 'super_admin' || !exists.fullName) {
+      exists.role = 'super_admin';
+      exists.fullName ||= adminDisplayName;
+      await this.userRepo.save(exists);
+      this.logger.log(`Compte administrateur principal synchronisé : ${normalizedEmail}`);
     }
   }
 
@@ -133,9 +151,20 @@ export class AuthService implements OnModuleInit {
   }
 
   private async generateAccessToken(user: User) {
-    const payload = { sub: user.id, email: user.email, role: user.role, jti: randomUUID() };
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      name: user.fullName,
+      role: user.role,
+      jti: randomUUID(),
+    };
     const token = await this.jwtService.signAsync(payload);
-    return { access_token: token, role: user.role, email: user.email };
+    return {
+      access_token: token,
+      role: user.role,
+      email: user.email,
+      fullName: user.fullName,
+    };
   }
 
   private maskEmail(email: string) {

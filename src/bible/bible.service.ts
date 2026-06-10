@@ -1,115 +1,147 @@
 import { Injectable } from '@nestjs/common';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-// Données de base des livres bibliques (AT + NT)
-const BOOKS = [
-  // Ancien Testament
-  { id: 'GEN', name: 'Genèse', testament: 'AT', chapters: 50 },
-  { id: 'EXO', name: 'Exode', testament: 'AT', chapters: 40 },
-  { id: 'LEV', name: 'Lévitique', testament: 'AT', chapters: 27 },
-  { id: 'NUM', name: 'Nombres', testament: 'AT', chapters: 36 },
-  { id: 'DEU', name: 'Deutéronome', testament: 'AT', chapters: 34 },
-  { id: 'JOS', name: 'Josué', testament: 'AT', chapters: 24 },
-  { id: 'JDG', name: 'Juges', testament: 'AT', chapters: 21 },
-  { id: 'RUT', name: 'Ruth', testament: 'AT', chapters: 4 },
-  { id: '1SA', name: '1 Samuel', testament: 'AT', chapters: 31 },
-  { id: '2SA', name: '2 Samuel', testament: 'AT', chapters: 24 },
-  { id: '1KI', name: '1 Rois', testament: 'AT', chapters: 22 },
-  { id: '2KI', name: '2 Rois', testament: 'AT', chapters: 25 },
-  { id: 'PSA', name: 'Psaumes', testament: 'AT', chapters: 150 },
-  { id: 'PRO', name: 'Proverbes', testament: 'AT', chapters: 31 },
-  { id: 'ECC', name: 'Ecclésiaste', testament: 'AT', chapters: 12 },
-  { id: 'ISA', name: 'Ésaïe', testament: 'AT', chapters: 66 },
-  { id: 'JER', name: 'Jérémie', testament: 'AT', chapters: 52 },
-  { id: 'EZK', name: 'Ézéchiel', testament: 'AT', chapters: 48 },
-  { id: 'DAN', name: 'Daniel', testament: 'AT', chapters: 12 },
-  // Nouveau Testament
-  { id: 'MAT', name: 'Matthieu', testament: 'NT', chapters: 28 },
-  { id: 'MRK', name: 'Marc', testament: 'NT', chapters: 16 },
-  { id: 'LUK', name: 'Luc', testament: 'NT', chapters: 24 },
-  { id: 'JHN', name: 'Jean', testament: 'NT', chapters: 21 },
-  { id: 'ACT', name: 'Actes', testament: 'NT', chapters: 28 },
-  { id: 'ROM', name: 'Romains', testament: 'NT', chapters: 16 },
-  { id: '1CO', name: '1 Corinthiens', testament: 'NT', chapters: 16 },
-  { id: '2CO', name: '2 Corinthiens', testament: 'NT', chapters: 13 },
-  { id: 'GAL', name: 'Galates', testament: 'NT', chapters: 6 },
-  { id: 'EPH', name: 'Éphésiens', testament: 'NT', chapters: 6 },
-  { id: 'PHP', name: 'Philippiens', testament: 'NT', chapters: 4 },
-  { id: 'COL', name: 'Colossiens', testament: 'NT', chapters: 4 },
-  { id: '1TH', name: '1 Thessaloniciens', testament: 'NT', chapters: 5 },
-  { id: '1TI', name: '1 Timothée', testament: 'NT', chapters: 6 },
-  { id: '2TI', name: '2 Timothée', testament: 'NT', chapters: 4 },
-  { id: 'HEB', name: 'Hébreux', testament: 'NT', chapters: 13 },
-  { id: 'JAS', name: 'Jacques', testament: 'NT', chapters: 5 },
-  { id: '1PE', name: '1 Pierre', testament: 'NT', chapters: 5 },
-  { id: '2PE', name: '2 Pierre', testament: 'NT', chapters: 3 },
-  { id: '1JN', name: '1 Jean', testament: 'NT', chapters: 5 },
-  { id: 'REV', name: 'Apocalypse', testament: 'NT', chapters: 22 },
-];
+const { bcv_parser } = require('bible-passage-reference-parser/cjs/fr_bcv_parser');
 
-// Versets classiques intégrés localement pour fonctionnement sans API
-const CLASSIC_VERSES: Record<string, string> = {
-  'jean 3:16': 'Car Dieu a tant aimé le monde qu\'il a donné son Fils unique, afin que quiconque croit en lui ne périsse point, mais qu\'il ait la vie éternelle.',
-  'jean 14:6': 'Jésus lui dit : Je suis le chemin, la vérité, et la vie. Nul ne vient au Père que par moi.',
-  'philippiens 4:13': 'Je puis tout par celui qui me fortifie.',
-  'romains 8:28': 'Nous savons, du reste, que toutes choses concourent au bien de ceux qui aiment Dieu, de ceux qui sont appelés selon son dessein.',
-  'psaumes 23:1': 'L\'Éternel est mon berger : je ne manquerai de rien.',
-  'matthieu 6:33': 'Cherchez premièrement le royaume et la justice de Dieu ; et toutes ces choses vous seront données par-dessus.',
-  'proverbes 3:5': 'Confie-toi en l\'Éternel de tout ton cœur, et ne t\'appuie pas sur ta sagesse.',
-  'ésaïe 40:31': 'Mais ceux qui se confient en l\'Éternel renouvellent leur force. Ils prennent le vol comme les aigles ; ils courent, et ne se lassent point ; ils marchent, et ne se fatiguent point.',
-  'hébreux 11:1': 'Or la foi est une ferme assurance des choses qu\'on espère, une démonstration de celles qu\'on ne voit pas.',
-  '2 timothée 3:16': 'Toute Écriture est inspirée de Dieu, et utile pour enseigner, pour convaincre, pour corriger, pour instruire dans la justice.',
-  'galates 5:22': 'Mais le fruit de l\'Esprit, c\'est l\'amour, la joie, la paix, la patience, la bonté, la bénignité, la fidélité, la douceur, la tempérance.',
-  'matthieu 28:19': 'Allez, faites de toutes les nations des disciples, les baptisant au nom du Père, du Fils et du Saint Esprit.',
-  'actes 1:8': 'Mais vous recevrez une puissance, le Saint Esprit survenant sur vous, et vous serez mes témoins à Jérusalem, dans toute la Judée, dans la Samarie, et jusqu\'aux extrémités de la terre.',
-  'éphésiens 2:8': 'Car c\'est par la grâce que vous êtes sauvés, par le moyen de la foi. Et cela ne vient pas de vous, c\'est le don de Dieu.',
-  'apocalypse 3:20': 'Voici, je me tiens à la porte, et je frappe. Si quelqu\'un entend ma voix et ouvre la porte, j\'entrerai chez lui, je souperai avec lui, et lui avec moi.',
+export interface BibleVerse {
+  number: number;
+  text: string;
+}
+
+interface BibleChapter {
+  chapter: number;
+  verses: BibleVerse[];
+}
+
+interface BibleBook {
+  book: string;
+  bookId: number;
+  englishName: string;
+  testament: 'OT' | 'NT';
+  chapters: BibleChapter[];
+}
+
+interface BibleData {
+  version: string;
+  name: string;
+  language: string;
+  license: string;
+  books: BibleBook[];
+}
+
+export interface IndexedVerse {
+  reference: string;
+  text: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  normalizedText: string;
+}
+
+const FRENCH_BOOK_NAMES: Record<string, string> = {
+  Gen: 'Genèse', Exod: 'Exode', Lev: 'Lévitique', Num: 'Nombres',
+  Deut: 'Deutéronome', Josh: 'Josué', Judg: 'Juges', Ruth: 'Ruth',
+  '1Sam': '1 Samuel', '2Sam': '2 Samuel', '1Kgs': '1 Rois', '2Kgs': '2 Rois',
+  '1Chr': '1 Chroniques', '2Chr': '2 Chroniques', Ezra: 'Esdras', Neh: 'Néhémie',
+  Esth: 'Esther', Job: 'Job', Ps: 'Psaumes', Prov: 'Proverbes',
+  Eccl: 'Ecclésiaste', Song: 'Cantique des Cantiques', Isa: 'Ésaïe', Jer: 'Jérémie',
+  Lam: 'Lamentations', Ezek: 'Ézéchiel', Dan: 'Daniel', Hos: 'Osée',
+  Joel: 'Joël', Amos: 'Amos', Obad: 'Abdias', Jonah: 'Jonas',
+  Mic: 'Michée', Nah: 'Nahum', Hab: 'Habacuc', Zeph: 'Sophonie',
+  Hag: 'Aggée', Zech: 'Zacharie', Mal: 'Malachie', Matt: 'Matthieu',
+  Mark: 'Marc', Luke: 'Luc', John: 'Jean', Acts: 'Actes',
+  Rom: 'Romains', '1Cor': '1 Corinthiens', '2Cor': '2 Corinthiens', Gal: 'Galates',
+  Eph: 'Éphésiens', Phil: 'Philippiens', Col: 'Colossiens',
+  '1Thess': '1 Thessaloniciens', '2Thess': '2 Thessaloniciens',
+  '1Tim': '1 Timothée', '2Tim': '2 Timothée', Titus: 'Tite', Phlm: 'Philémon',
+  Heb: 'Hébreux', Jas: 'Jacques', '1Pet': '1 Pierre', '2Pet': '2 Pierre',
+  '1John': '1 Jean', '2John': '2 Jean', '3John': '3 Jean', Jude: 'Jude',
+  Rev: 'Apocalypse',
 };
+
+const CLASSIC_REFERENCES = [
+  'Jean 3:16', 'Jean 14:6', 'Philippiens 4:13', 'Romains 8:28',
+  'Psaumes 23:1', 'Matthieu 6:33', 'Proverbes 3:5', 'Ésaïe 40:31',
+  'Hébreux 11:1', '2 Timothée 3:16', 'Galates 5:22', 'Matthieu 28:19',
+  'Actes 1:8', 'Éphésiens 2:8', 'Apocalypse 3:20',
+];
 
 @Injectable()
 export class BibleService {
-  getBooks() {
-    return BOOKS;
-  }
+  private readonly bible: BibleData;
+  private readonly books = new Map<string, BibleBook>();
+  private readonly verses: IndexedVerse[] = [];
+  private readonly parser = new bcv_parser();
 
-  getBooksByTestament(testament: 'AT' | 'NT') {
-    return BOOKS.filter(b => b.testament === testament);
-  }
+  constructor() {
+    const dataPath = join(__dirname, 'data', 'lsg.json');
+    this.bible = JSON.parse(readFileSync(dataPath, 'utf8')) as BibleData;
 
-  search(query: string): { reference: string; text: string; book?: string }[] {
-    const q = query.toLowerCase().trim();
-    const results: { reference: string; text: string; book?: string }[] = [];
-
-    // Recherche dans les versets classiques intégrés
-    for (const [ref, text] of Object.entries(CLASSIC_VERSES)) {
-      if (ref.includes(q) || text.toLowerCase().includes(q)) {
-        results.push({
-          reference: this.formatReference(ref),
-          text,
-        });
+    for (const book of this.bible.books) {
+      this.books.set(book.book, book);
+      for (const chapter of book.chapters) {
+        for (const verse of chapter.verses) {
+          const text = verse.text.replace(/''/g, '\'');
+          this.verses.push({
+            reference: this.reference(book.book, chapter.chapter, verse.number),
+            text,
+            book: book.book,
+            chapter: chapter.chapter,
+            verse: verse.number,
+            normalizedText: this.normalize(text),
+          });
+        }
       }
     }
-
-    // Recherche exacte par référence (ex: "Jean 3:16")
-    const exact = CLASSIC_VERSES[q];
-    if (exact && !results.find(r => r.text === exact)) {
-      results.unshift({ reference: this.formatReference(q), text: exact });
-    }
-
-    return results.slice(0, 10);
   }
 
-  getVerse(reference: string): { reference: string; text: string } | null {
-    const key = reference.toLowerCase().trim();
-    const text = CLASSIC_VERSES[key];
-    if (!text) return null;
-    return { reference: this.formatReference(key), text };
+  getMetadata() {
+    return {
+      version: this.bible.version,
+      name: this.bible.name,
+      language: this.bible.language,
+      license: this.bible.license,
+      offline: true,
+      books: this.bible.books.length,
+      verses: this.verses.length,
+    };
   }
 
-  getClassicVerses(): { reference: string; text: string }[] {
-    return Object.entries(CLASSIC_VERSES).map(([ref, text]) => ({
-      reference: this.formatReference(ref),
-      text,
+  getBooks() {
+    return this.bible.books.map(book => ({
+      id: book.book,
+      name: FRENCH_BOOK_NAMES[book.book] ?? book.englishName,
+      testament: book.testament === 'OT' ? 'AT' : 'NT',
+      chapters: book.chapters.length,
     }));
+  }
+
+  getChapters(bookId: string) {
+    const book = this.books.get(bookId);
+    if (!book) return [];
+    return book.chapters.map(chapter => ({
+      chapter: chapter.chapter,
+      verses: chapter.verses,
+    }));
+  }
+
+  search(query: string): IndexedVerse[] {
+    const trimmed = query.trim();
+    const osis = this.parser.parse(trimmed).osis();
+    if (osis) return this.resolveOsis(osis).slice(0, 50);
+
+    const terms = this.normalize(trimmed).split(/\s+/).filter(term => term.length >= 2);
+    if (!terms.length) return [];
+
+    return this.verses
+      .filter(verse => terms.every(term => verse.normalizedText.includes(term)))
+      .slice(0, 20)
+      .map(({ normalizedText, ...verse }) => verse as IndexedVerse);
+  }
+
+  getClassicVerses() {
+    return CLASSIC_REFERENCES.flatMap(reference => this.search(reference).slice(0, 1));
   }
 
   getQuiz(count = 5) {
@@ -126,7 +158,7 @@ export class BibleService {
         const options = [...alternatives, verse.reference].sort(() => Math.random() - 0.5);
         return {
           id: `${index}-${verse.reference}`,
-          question: `Quelle est la référence de ce verset ?`,
+          question: 'Quelle est la référence de ce verset ?',
           excerpt: verse.text,
           options,
           answerIndex: options.indexOf(verse.reference),
@@ -134,7 +166,44 @@ export class BibleService {
       });
   }
 
-  private formatReference(ref: string): string {
-    return ref.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  private resolveOsis(osis: string): IndexedVerse[] {
+    const [startRaw, endRaw] = osis.split('-');
+    const start = this.parseOsisPoint(startRaw);
+    if (!start) return [];
+    const end = this.parseOsisPoint(endRaw ?? startRaw) ?? start;
+
+    return this.verses
+      .filter(verse => {
+        if (verse.book !== start.book || verse.book !== end.book) return false;
+        const value = verse.chapter * 1000 + verse.verse;
+        return value >= start.chapter * 1000 + start.verse
+          && value <= end.chapter * 1000 + end.verse;
+      })
+      .slice(0, 50)
+      .map(({ normalizedText, ...verse }) => verse as IndexedVerse);
+  }
+
+  private parseOsisPoint(value: string) {
+    const match = value?.match(/^([1-3]?[A-Za-z]+)\.(\d+)(?:\.(\d+))?$/);
+    if (!match) return null;
+    const book = this.books.get(match[1]);
+    const chapter = Number(match[2]);
+    const verse = Number(match[3] ?? 1);
+    if (!book?.chapters.find(item => item.chapter === chapter)) return null;
+    return { book: match[1], chapter, verse };
+  }
+
+  private reference(book: string, chapter: number, verse: number) {
+    return `${FRENCH_BOOK_NAMES[book] ?? book} ${chapter}:${verse}`;
+  }
+
+  private normalize(value: string) {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }

@@ -33,6 +33,7 @@ import { StatsModule } from './stats/stats.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MentorshipModule } from './mentorship/mentorship.module';
 import { AuditInterceptor } from './audit/audit.interceptor';
+import { CantiquesModule } from './cantiques/cantiques.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     ReunionsModule,
     StreamingModule,
     BibleModule,
+    CantiquesModule,
     AuditModule,
     CellGroupsModule,
     StatsModule,

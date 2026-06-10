@@ -26,6 +26,8 @@ import { BaselineSchema1717977600000 } from './migrations/1717977600000-Baseline
 import { PushSubscriptionEntity } from './entities/push-subscription.entity';
 import { MentorshipRequest } from './entities/mentorship-request.entity';
 import { MeetingInvite } from './entities/meeting-invite.entity';
+import { Cantique } from './entities/cantique.entity';
+import { AddCantiques1781136000000 } from './migrations/1781136000000-AddCantiques';
 
 @Module({
   imports: [
@@ -47,9 +49,10 @@ import { MeetingInvite } from './entities/meeting-invite.entity';
           PushSubscriptionEntity,
           MentorshipRequest,
           MeetingInvite,
+          Cantique,
         ],
         synchronize: config.get<string>('DB_SYNCHRONIZE', 'false') === 'true',
-        migrations: [BaselineSchema1717977600000],
+        migrations: [BaselineSchema1717977600000, AddCantiques1781136000000],
         migrationsRun: true,
         logging: config.get('NODE_ENV') !== 'production',
       }),

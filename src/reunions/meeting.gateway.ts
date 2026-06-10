@@ -11,6 +11,10 @@ import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { WsException } from '@nestjs/websockets';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Member } from '../database/entities/member.entity';
+import { User } from '../database/entities/user.entity';
 
 export interface SpiritualEvent {
   type: 'verse' | 'lyrics' | 'announcement';
@@ -61,7 +65,11 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   private activePolls = new Map<string, { poll: PollEvent; votes: Map<string, number> }>();
   private mediaStates = new Map<string, Record<MediaMode, { status: MediaStatus; error?: string }>>();
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    @InjectRepository(Member) private readonly memberRepo: Repository<Member>,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
+  ) {}
 
   async handleConnection(client: Socket) {
     const token = this.extractToken(client);
@@ -71,7 +79,27 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     }
 
     try {
-      client.data.user = await this.jwtService.verifyAsync(token);
+      const user = await this.jwtService.verifyAsync(token);
+      if (user.type === 'member' && user.role !== 'meeting_moderator') {
+        const member = await this.memberRepo.findOne({ where: { id: user.sub } });
+        if (!member?.isActive) {
+          client.disconnect(true);
+          return;
+        }
+        user.role = member.role;
+        user.email = member.email;
+        user.name = `${member.firstName} ${member.lastName}`.trim();
+      } else if (user.type !== 'member') {
+        const admin = await this.userRepo.findOne({ where: { id: user.sub } });
+        if (!admin || !['admin', 'super_admin'].includes(admin.role)) {
+          client.disconnect(true);
+          return;
+        }
+        user.role = admin.role;
+        user.email = admin.email;
+        user.name = admin.fullName;
+      }
+      client.data.user = user;
     } catch {
       client.disconnect(true);
       return;
@@ -127,12 +155,12 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   // ── Outils spirituels (admin → tous les participants) ──────────────────────
 
   @SubscribeMessage('show-verse')
-  handleShowVerse(
+  async handleShowVerse(
     @MessageBody() data: { meetingId: string; reference: string; content: string },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
-    this.requireAdmin(client);
+    await this.requireAdmin(client);
     this.server.to(data.meetingId).emit('spiritual-event', {
       type: 'verse',
       title: data.reference,
@@ -143,12 +171,12 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   @SubscribeMessage('show-lyrics')
-  handleShowLyrics(
+  async handleShowLyrics(
     @MessageBody() data: { meetingId: string; title: string; lines: string[] },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
-    this.requireAdmin(client);
+    await this.requireAdmin(client);
     this.server.to(data.meetingId).emit('spiritual-event', {
       type: 'lyrics',
       title: data.title,
@@ -158,12 +186,12 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   @SubscribeMessage('show-announcement')
-  handleShowAnnouncement(
+  async handleShowAnnouncement(
     @MessageBody() data: { meetingId: string; message: string },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
-    this.requireAdmin(client);
+    await this.requireAdmin(client);
     this.server.to(data.meetingId).emit('spiritual-event', {
       type: 'announcement',
       title: 'Annonce',
@@ -173,12 +201,12 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   @SubscribeMessage('dismiss-spiritual')
-  handleDismissSpiritualEvent(
+  async handleDismissSpiritualEvent(
     @MessageBody() data: { meetingId: string },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
-    this.requireAdmin(client);
+    await this.requireAdmin(client);
     this.server.to(data.meetingId).emit('spiritual-dismissed');
     return { dismissed: true };
   }
@@ -219,12 +247,12 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   // ── Sondages en réunion ────────────────────────────────────────────────────
 
   @SubscribeMessage('start-poll')
-  handleStartPoll(
+  async handleStartPoll(
     @MessageBody() data: { meetingId: string; poll: PollEvent },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
-    this.requireAdmin(client);
+    await this.requireAdmin(client);
     if (
       !data.poll?.question?.trim() ||
       !Array.isArray(data.poll.options) ||
@@ -268,18 +296,18 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   @SubscribeMessage('close-poll')
-  handleClosePoll(
+  async handleClosePoll(
     @MessageBody() data: { meetingId: string },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
-    this.requireAdmin(client);
+    await this.requireAdmin(client);
     this.closePoll(data.meetingId);
     return { closed: true };
   }
 
   @SubscribeMessage('media-status')
-  handleMediaStatus(
+  async handleMediaStatus(
     @MessageBody() data: {
       meetingId: string;
       mode: MediaMode;
@@ -289,7 +317,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
-    this.requireAdmin(client);
+    await this.requireAdmin(client);
     if (!['file', 'stream'].includes(data.mode)) throw new WsException('Mode média invalide.');
     if (!['idle', 'starting', 'active', 'stopping', 'failed'].includes(data.status)) {
       throw new WsException('État média invalide.');
@@ -398,8 +426,17 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return null;
   }
 
-  private requireAdmin(client: Socket): void {
-    const role = client.data.user?.role;
+  private async requireAdmin(client: Socket): Promise<void> {
+    const user = client.data.user;
+    if (user?.type === 'member' && user.role !== 'meeting_moderator') {
+      const member = await this.memberRepo.findOne({ where: { id: user.sub } });
+      user.role = member?.isActive ? member.role : 'member';
+    } else if (user?.type !== 'member') {
+      const admin = await this.userRepo.findOne({ where: { id: user?.sub } });
+      user.role = admin?.role ?? 'user';
+    }
+
+    const role = user?.role;
     const joinedMeeting = client.data.user?.meetingModeratorFor;
     if (
       role !== 'admin' &&

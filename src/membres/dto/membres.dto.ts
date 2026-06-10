@@ -1,5 +1,4 @@
-import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
-import { MemberRole } from '../../database/entities/member.entity';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class UpdateMembreDto {
   @IsString()
@@ -20,8 +19,8 @@ export class UpdateMembreDto {
 }
 
 export class UpdateRoleDto {
-  @IsEnum(['super_admin', 'admin', 'member', 'visitor'])
-  role: MemberRole;
+  @IsIn(['admin', 'member', 'visitor'])
+  role: 'admin' | 'member' | 'visitor';
 }
 
 export class UpdateSettingsDto {

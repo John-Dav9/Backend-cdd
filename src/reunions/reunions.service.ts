@@ -183,12 +183,14 @@ export class ReunionsService {
     let member = persistedMember;
     if (!member) {
       if (!isAdminUser) throw new NotFoundException('Membre non trouvé');
+      const adminName = (jwtUser?.name || 'Administrateur principal').trim();
+      const [firstName, ...lastNameParts] = adminName.split(/\s+/);
       member = {
         id: userId,
-        firstName: 'Administrateur',
-        lastName: '',
+        firstName,
+        lastName: lastNameParts.join(' '),
         email: jwtUser?.email ?? '',
-        role: 'admin',
+        role: jwtUser?.role === 'super_admin' ? 'super_admin' : 'admin',
         isActive: true,
       } as Member;
     }
@@ -429,6 +431,9 @@ export class ReunionsService {
       roomId: meeting.jitsiRoomId,
       dialIn: this.jitsiService.getDialIn(),
       isModerator,
+      displayName: participant.displayName,
+      email: member.email,
+      role: jwtUser?.role ?? member.role,
       reconnectToken,
       participantId: participant.id,
       meeting: { id: meeting.id, title: meeting.title, status: meeting.status },

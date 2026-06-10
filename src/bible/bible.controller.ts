@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
 import { BibleService } from './bible.service';
 
@@ -10,6 +10,18 @@ export class BibleController {
   @Get('books')
   getBooks() {
     return this.bibleService.getBooks();
+  }
+
+  @Public()
+  @Get('metadata')
+  getMetadata() {
+    return this.bibleService.getMetadata();
+  }
+
+  @Public()
+  @Get('books/:book/chapters')
+  getChapters(@Param('book') book: string) {
+    return this.bibleService.getChapters(book);
   }
 
   @Public()

@@ -50,7 +50,7 @@ export class MembresController {
   }
 
   @Put(':id/role')
-  @AdminOnly()
+  @Roles('super_admin')
   updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     return this.membresService.updateRole(id, dto);
   }
