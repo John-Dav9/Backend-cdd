@@ -22,6 +22,7 @@ export interface SpiritualEvent {
   content: string;
   author?: string;
   reference?: string; // Pour les versets : "Jean 3:16"
+  backgroundId?: string;
 }
 
 export interface PollEvent {
@@ -63,6 +64,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   private rooms = new Map<string, Set<string>>();
   // Active polls: meetingId → { poll, votes: Map<socketId, optionIndex> }
   private activePolls = new Map<string, { poll: PollEvent; votes: Map<string, number> }>();
+  private activeSpiritualEvents = new Map<string, SpiritualEvent>();
   private mediaStates = new Map<string, Record<MediaMode, { status: MediaStatus; error?: string }>>();
 
   constructor(
@@ -135,6 +137,8 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     if (activePoll) {
       client.emit('poll-started', activePoll.poll);
     }
+    const activeSpiritualEvent = this.activeSpiritualEvents.get(meetingId);
+    if (activeSpiritualEvent) client.emit('spiritual-event', activeSpiritualEvent);
 
     return { joined: true, meetingId };
   }
@@ -156,47 +160,56 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   @SubscribeMessage('show-verse')
   async handleShowVerse(
-    @MessageBody() data: { meetingId: string; reference: string; content: string },
+    @MessageBody() data: { meetingId: string; reference: string; content: string; backgroundId?: string },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
     await this.requireAdmin(client);
-    this.server.to(data.meetingId).emit('spiritual-event', {
+    const event = {
       type: 'verse',
       title: data.reference,
       content: data.content,
       reference: data.reference,
-    } as SpiritualEvent);
+      backgroundId: this.normalizeSpiritualBackground(data.backgroundId),
+    } as SpiritualEvent;
+    this.activeSpiritualEvents.set(data.meetingId, event);
+    this.server.to(data.meetingId).emit('spiritual-event', event);
     return { sent: true };
   }
 
   @SubscribeMessage('show-lyrics')
   async handleShowLyrics(
-    @MessageBody() data: { meetingId: string; title: string; lines: string[] },
+    @MessageBody() data: { meetingId: string; title: string; lines: string[]; backgroundId?: string },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
     await this.requireAdmin(client);
-    this.server.to(data.meetingId).emit('spiritual-event', {
+    const event = {
       type: 'lyrics',
       title: data.title,
       content: data.lines.join('\n'),
-    } as SpiritualEvent);
+      backgroundId: this.normalizeSpiritualBackground(data.backgroundId),
+    } as SpiritualEvent;
+    this.activeSpiritualEvents.set(data.meetingId, event);
+    this.server.to(data.meetingId).emit('spiritual-event', event);
     return { sent: true };
   }
 
   @SubscribeMessage('show-announcement')
   async handleShowAnnouncement(
-    @MessageBody() data: { meetingId: string; message: string },
+    @MessageBody() data: { meetingId: string; message: string; backgroundId?: string },
     @ConnectedSocket() client: Socket,
   ) {
     this.requireJoined(client, data.meetingId);
     await this.requireAdmin(client);
-    this.server.to(data.meetingId).emit('spiritual-event', {
+    const event = {
       type: 'announcement',
       title: 'Annonce',
       content: data.message,
-    } as SpiritualEvent);
+      backgroundId: this.normalizeSpiritualBackground(data.backgroundId),
+    } as SpiritualEvent;
+    this.activeSpiritualEvents.set(data.meetingId, event);
+    this.server.to(data.meetingId).emit('spiritual-event', event);
     return { sent: true };
   }
 
@@ -207,6 +220,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   ) {
     this.requireJoined(client, data.meetingId);
     await this.requireAdmin(client);
+    this.activeSpiritualEvents.delete(data.meetingId);
     this.server.to(data.meetingId).emit('spiritual-dismissed');
     return { dismissed: true };
   }
@@ -383,6 +397,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     this.server.to(meetingId).emit('meeting-ended', { meetingId });
     this.rooms.delete(meetingId);
     this.activePolls.delete(meetingId);
+    this.activeSpiritualEvents.delete(meetingId);
     this.mediaStates.delete(meetingId);
   }
 
@@ -424,6 +439,11 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     const authorization = client.handshake.headers.authorization;
     if (authorization?.startsWith('Bearer ')) return authorization.slice(7);
     return null;
+  }
+
+  private normalizeSpiritualBackground(backgroundId?: string) {
+    const allowed = ['ocean', 'dawn', 'midnight', 'forest', 'parchment', 'royal'];
+    return allowed.includes(backgroundId ?? '') ? backgroundId : 'ocean';
   }
 
   private async requireAdmin(client: Socket): Promise<void> {
