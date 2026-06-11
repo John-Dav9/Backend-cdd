@@ -97,6 +97,26 @@ export class JitsiService {
     return {
       number,
       pin: this.config.get<string>('JITSI_DIAL_IN_PIN')?.trim() || null,
+      countries: this.config.get<string>('JITSI_DIAL_IN_COUNTRIES', '')
+        .split(',')
+        .map(country => country.trim())
+        .filter(Boolean),
+    };
+  }
+
+  getCapabilities() {
+    const dialIn = this.getDialIn();
+    return {
+      jitsiUrl: this.getJitsiUrl(),
+      recording: this.config.get<string>('JIBRI_ENABLED', 'false').toLowerCase() === 'true',
+      dialIn: {
+        configured: Boolean(dialIn),
+        ...dialIn,
+      },
+      multiStreaming: Boolean(
+        this.config.get<string>('STREAM_RELAY_RTMP_URL')?.trim() &&
+        this.config.get<string>('STREAM_RELAY_CONTROL_URL')?.trim()
+      ),
     };
   }
 }

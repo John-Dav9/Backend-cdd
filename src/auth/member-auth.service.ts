@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { randomBytes, randomInt } from 'crypto';
 import { IsNull, MoreThan, Repository } from 'typeorm';
 import { CommunitySettings } from '../database/entities/community-settings.entity';
@@ -155,15 +155,27 @@ export class MemberAuthService {
   }
 
   async createGuest(dto: GuestAccessDto) {
-    const names = dto.displayName.trim().split(/\s+/);
-    const member = await this.memberRepo.save({
-      email: `guest-${randomBytes(16).toString('hex')}@visitor.cmciea.local`,
-      firstName: names[0],
-      lastName: names.slice(1).join(' '),
-      source: 'invitation',
+    const displayName = dto.displayName.trim();
+    const guestId = `guest-${randomBytes(16).toString('hex')}`;
+    const token = await this.jwtService.signAsync({
+      sub: guestId,
+      email: `${guestId}@visitor.cmciea.local`,
+      name: displayName,
       role: 'visitor',
-    });
-    return this.generateMemberToken(member.email);
+      type: 'visitor',
+    }, { expiresIn: '12h' });
+
+    const [firstName, ...lastNameParts] = displayName.split(/\s+/);
+    return {
+      access_token: token,
+      member: {
+        id: guestId,
+        firstName,
+        lastName: lastNameParts.join(' '),
+        email: '',
+        role: 'visitor',
+      },
+    };
   }
 
   async getMe(memberId: string) {

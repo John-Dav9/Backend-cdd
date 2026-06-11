@@ -4,13 +4,17 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 export class MeetingScopeGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
-    if (request.user?.role !== 'meeting_moderator') return true;
+    const scopedMeetingId =
+      request.user?.role === 'meeting_moderator'
+        ? request.user.meetingModeratorFor
+        : request.user?.meetingAccessFor;
+    if (!scopedMeetingId) return true;
 
     const requestedMeetingId =
       request.params?.id ??
       request.params?.meetingId ??
       request.body?.meetingId;
-    if (requestedMeetingId && request.user.meetingModeratorFor === requestedMeetingId) return true;
+    if (requestedMeetingId && scopedMeetingId === requestedMeetingId) return true;
     throw new ForbiddenException('Ce lien est limité à une seule réunion.');
   }
 }

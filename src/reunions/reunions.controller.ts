@@ -45,6 +45,12 @@ export class ReunionsController {
   }
 
   @Public()
+  @Get('capabilities')
+  capabilities() {
+    return this.jitsiService.getCapabilities();
+  }
+
+  @Public()
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.reunionsService.findOnePublic(id);
@@ -116,7 +122,7 @@ export class ReunionsController {
   async startRecording(@Param('id') id: string) {
     await this.reunionsService.findOne(id);
     this.jitsiService.assertJibriAvailable();
-    if (!this.meetingGateway.sendMediaCommand(id, { action: 'start', mode: 'file' })) {
+    if (!await this.meetingGateway.sendMediaCommand(id, { action: 'start', mode: 'file' })) {
       throw new ConflictException('Aucun modérateur connecté ne peut démarrer l’enregistrement.');
     }
     return { status: 'starting', message: 'Démarrage de l’enregistrement demandé.' };
@@ -126,7 +132,7 @@ export class ReunionsController {
   @MeetingAdminOnly()
   async stopRecording(@Param('id') id: string) {
     await this.reunionsService.findOne(id);
-    if (!this.meetingGateway.sendMediaCommand(id, { action: 'stop', mode: 'file' })) {
+    if (!await this.meetingGateway.sendMediaCommand(id, { action: 'stop', mode: 'file' })) {
       throw new ConflictException('Aucun modérateur connecté ne peut arrêter l’enregistrement.');
     }
     return { status: 'stopping', message: 'Arrêt de l’enregistrement demandé.' };
@@ -134,7 +140,7 @@ export class ReunionsController {
 
   @Get(':id/record/status')
   @MeetingAdminOnly()
-  recordingStatus(@Param('id') id: string) {
+  async recordingStatus(@Param('id') id: string) {
     return this.meetingGateway.getMediaState(id, 'file');
   }
 

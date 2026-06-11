@@ -34,6 +34,8 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { MentorshipModule } from './mentorship/mentorship.module';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { CantiquesModule } from './cantiques/cantiques.module';
+import { MeetingBackgroundsModule } from './meeting-backgrounds/meeting-backgrounds.module';
+import { MeetingAccessModule } from './meeting-access/meeting-access.module';
 
 @Module({
   imports: [
@@ -65,6 +67,8 @@ import { CantiquesModule } from './cantiques/cantiques.module';
     StreamingModule,
     BibleModule,
     CantiquesModule,
+    MeetingBackgroundsModule,
+    MeetingAccessModule,
     AuditModule,
     CellGroupsModule,
     StatsModule,

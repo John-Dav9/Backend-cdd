@@ -1,3 +1,7 @@
+jest.mock('../mail/mail.service', () => ({
+  MailService: class MailService {},
+}));
+
 import { ReunionsService } from './reunions.service';
 
 describe('ReunionsService waiting room', () => {

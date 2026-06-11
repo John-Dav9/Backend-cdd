@@ -709,7 +709,7 @@ export class MailService {
         <p><strong>Message :</strong></p>
         <p>${message.replace(/\n/g, '<br/>')}</p>
       `,
-      reply_to: email,
+      replyTo: email,
     }).catch((err) => this.logger.error('Resend error', err));
   }
 

@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { Between, IsNull, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { Member } from '../database/entities/member.entity';
 import { MeetingParticipant } from '../database/entities/meeting-participant.entity';
@@ -167,6 +167,7 @@ export class ReunionsService {
     if (
       jwtUser?.role === 'visitor' &&
       jwtUser?.meetingModeratorFor !== id &&
+      jwtUser?.meetingAccessFor !== id &&
       !meeting.isPublic
     ) {
       throw new ForbiddenException('Cette réunion est réservée aux membres.');
@@ -178,19 +179,25 @@ export class ReunionsService {
       throw new ForbiddenException('Ce lien est limité à une autre réunion.');
     }
 
-    const isAdminUser = jwtUser?.type !== 'member';
+    const isAdminUser = jwtUser?.role === 'admin' || jwtUser?.role === 'super_admin';
+    const isVisitor = jwtUser?.type === 'visitor' && jwtUser?.role === 'visitor';
     const persistedMember = await this.memberRepo.findOne({ where: { id: userId } });
     let member = persistedMember;
     if (!member) {
-      if (!isAdminUser) throw new NotFoundException('Membre non trouvé');
-      const adminName = (jwtUser?.name || 'Administrateur principal').trim();
-      const [firstName, ...lastNameParts] = adminName.split(/\s+/);
+      if (!isAdminUser && !isVisitor) throw new NotFoundException('Membre non trouvé');
+      const displayIdentity = (
+        jwtUser?.name ||
+        (isAdminUser ? 'Administrateur principal' : 'Visiteur')
+      ).trim();
+      const [firstName, ...lastNameParts] = displayIdentity.split(/\s+/);
       member = {
         id: userId,
         firstName,
         lastName: lastNameParts.join(' '),
         email: jwtUser?.email ?? '',
-        role: jwtUser?.role === 'super_admin' ? 'super_admin' : 'admin',
+        role: isAdminUser
+          ? (jwtUser?.role === 'super_admin' ? 'super_admin' : 'admin')
+          : 'visitor',
         isActive: true,
       } as Member;
     }

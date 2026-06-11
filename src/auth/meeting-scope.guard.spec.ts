@@ -26,4 +26,16 @@ describe('MeetingScopeGuard', () => {
   it('does not restrict global administrators', () => {
     expect(guard.canActivate(context({ role: 'admin' }, 'meeting-b'))).toBe(true);
   });
+
+  it('allows a visitor token only into its private meeting', () => {
+    expect(guard.canActivate(context({
+      role: 'visitor',
+      meetingAccessFor: 'meeting-a',
+    }, 'meeting-a'))).toBe(true);
+
+    expect(() => guard.canActivate(context({
+      role: 'visitor',
+      meetingAccessFor: 'meeting-a',
+    }, 'meeting-b'))).toThrow(ForbiddenException);
+  });
 });

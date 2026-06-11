@@ -15,6 +15,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Member } from '../database/entities/member.entity';
 import { User } from '../database/entities/user.entity';
+import { MeetingRuntimeState } from '../database/entities/meeting-runtime-state.entity';
+import { SpiritualBackground } from '../database/entities/spiritual-background.entity';
 
 export interface SpiritualEvent {
   type: 'verse' | 'lyrics' | 'announcement';
@@ -62,7 +64,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   private readonly logger = new Logger(MeetingGateway.name);
   // meetingId → Set of socket IDs
   private rooms = new Map<string, Set<string>>();
-  // Active polls: meetingId → { poll, votes: Map<socketId, optionIndex> }
+  // Active polls: meetingId → { poll, votes: Map<authenticated identity, optionIndex> }
   private activePolls = new Map<string, { poll: PollEvent; votes: Map<string, number> }>();
   private activeSpiritualEvents = new Map<string, SpiritualEvent>();
   private mediaStates = new Map<string, Record<MediaMode, { status: MediaStatus; error?: string }>>();
@@ -71,6 +73,10 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     private readonly jwtService: JwtService,
     @InjectRepository(Member) private readonly memberRepo: Repository<Member>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(MeetingRuntimeState)
+    private readonly runtimeRepo: Repository<MeetingRuntimeState>,
+    @InjectRepository(SpiritualBackground)
+    private readonly backgroundRepo: Repository<SpiritualBackground>,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -82,7 +88,9 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
     try {
       const user = await this.jwtService.verifyAsync(token);
-      if (user.type === 'member' && user.role !== 'meeting_moderator') {
+      if (user.type === 'visitor' && user.role === 'visitor') {
+        user.name = String(user.name ?? 'Visiteur').slice(0, 100);
+      } else if (user.type === 'member' && user.role !== 'meeting_moderator') {
         const member = await this.memberRepo.findOne({ where: { id: user.sub } });
         if (!member?.isActive) {
           client.disconnect(true);
@@ -121,18 +129,20 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   @SubscribeMessage('join-meeting')
-  handleJoinMeeting(
+  async handleJoinMeeting(
     @MessageBody() data: { meetingId: string },
     @ConnectedSocket() client: Socket,
   ) {
     const { meetingId } = data;
     if (!meetingId?.trim()) throw new WsException('Réunion invalide.');
+    this.requireMeetingScope(client, meetingId);
     client.join(meetingId);
     if (!this.rooms.has(meetingId)) this.rooms.set(meetingId, new Set());
     this.rooms.get(meetingId)!.add(client.id);
     this.broadcastParticipantCount(meetingId);
 
     // Envoyer le sondage actif s'il y en a un
+    await this.restoreRuntimeState(meetingId);
     const activePoll = this.activePolls.get(meetingId);
     if (activePoll) {
       client.emit('poll-started', activePoll.poll);
@@ -170,9 +180,10 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
       title: data.reference,
       content: data.content,
       reference: data.reference,
-      backgroundId: this.normalizeSpiritualBackground(data.backgroundId),
+      backgroundId: await this.normalizeSpiritualBackground(data.backgroundId),
     } as SpiritualEvent;
     this.activeSpiritualEvents.set(data.meetingId, event);
+    await this.persistRuntimeState(data.meetingId);
     this.server.to(data.meetingId).emit('spiritual-event', event);
     return { sent: true };
   }
@@ -188,9 +199,10 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
       type: 'lyrics',
       title: data.title,
       content: data.lines.join('\n'),
-      backgroundId: this.normalizeSpiritualBackground(data.backgroundId),
+      backgroundId: await this.normalizeSpiritualBackground(data.backgroundId),
     } as SpiritualEvent;
     this.activeSpiritualEvents.set(data.meetingId, event);
+    await this.persistRuntimeState(data.meetingId);
     this.server.to(data.meetingId).emit('spiritual-event', event);
     return { sent: true };
   }
@@ -206,9 +218,10 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
       type: 'announcement',
       title: 'Annonce',
       content: data.message,
-      backgroundId: this.normalizeSpiritualBackground(data.backgroundId),
+      backgroundId: await this.normalizeSpiritualBackground(data.backgroundId),
     } as SpiritualEvent;
     this.activeSpiritualEvents.set(data.meetingId, event);
+    await this.persistRuntimeState(data.meetingId);
     this.server.to(data.meetingId).emit('spiritual-event', event);
     return { sent: true };
   }
@@ -221,6 +234,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     this.requireJoined(client, data.meetingId);
     await this.requireAdmin(client);
     this.activeSpiritualEvents.delete(data.meetingId);
+    await this.persistRuntimeState(data.meetingId);
     this.server.to(data.meetingId).emit('spiritual-dismissed');
     return { dismissed: true };
   }
@@ -279,17 +293,18 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     data.poll.options = data.poll.options.map(option => option.trim().slice(0, 120));
     const poll = { ...data.poll, id: `poll-${Date.now()}` };
     this.activePolls.set(data.meetingId, { poll, votes: new Map() });
+    await this.persistRuntimeState(data.meetingId);
     this.server.to(data.meetingId).emit('poll-started', poll);
 
     // Fermer automatiquement après la durée
     if (poll.durationSeconds) {
-      setTimeout(() => this.closePoll(data.meetingId), poll.durationSeconds * 1000);
+      setTimeout(() => void this.closePoll(data.meetingId), poll.durationSeconds * 1000);
     }
     return { started: true, pollId: poll.id };
   }
 
   @SubscribeMessage('poll-answer')
-  handlePollAnswer(
+  async handlePollAnswer(
     @MessageBody() data: { meetingId: string; pollId: string; optionIndex: number },
     @ConnectedSocket() client: Socket,
   ) {
@@ -304,7 +319,8 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
       throw new WsException('Option de sondage invalide.');
     }
 
-    pollData.votes.set(client.id, data.optionIndex);
+    pollData.votes.set(this.socketIdentity(client), data.optionIndex);
+    await this.persistRuntimeState(data.meetingId);
     this.broadcastPollResults(data.meetingId);
     return { voted: true };
   }
@@ -316,7 +332,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
   ) {
     this.requireJoined(client, data.meetingId);
     await this.requireAdmin(client);
-    this.closePoll(data.meetingId);
+    await this.closePoll(data.meetingId);
     return { closed: true };
   }
 
@@ -346,6 +362,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
       error: data.error?.slice(0, 300),
     };
     this.mediaStates.set(data.meetingId, state);
+    await this.persistRuntimeState(data.meetingId);
 
     const event = data.mode === 'file' ? 'recording-status' : 'streaming-status';
     this.server.to(data.meetingId).emit(event, {
@@ -355,13 +372,14 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { updated: true };
   }
 
-  private closePoll(meetingId: string) {
+  private async closePoll(meetingId: string) {
     const pollData = this.activePolls.get(meetingId);
     if (!pollData) return;
 
     const results = this.computePollResults(pollData);
     this.server.to(meetingId).emit('poll-closed', results);
     this.activePolls.delete(meetingId);
+    await this.persistRuntimeState(meetingId);
   }
 
   private broadcastPollResults(meetingId: string) {
@@ -399,6 +417,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     this.activePolls.delete(meetingId);
     this.activeSpiritualEvents.delete(meetingId);
     this.mediaStates.delete(meetingId);
+    void this.runtimeRepo.delete({ meetingId });
   }
 
   broadcastMeetingStarted(meetingId: string, title: string) {
@@ -409,10 +428,11 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     this.server.to(meetingId).emit('streaming-status', { status, platform });
   }
 
-  sendMediaCommand(
+  async sendMediaCommand(
     meetingId: string,
     command: { action: 'start' | 'stop'; mode: MediaMode; streamKey?: string },
-  ): boolean {
+  ): Promise<boolean> {
+    await this.restoreRuntimeState(meetingId);
     const moderator = this.findModeratorSocket(meetingId);
     if (!moderator) return false;
 
@@ -424,12 +444,55 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
       status: command.action === 'start' ? 'starting' : 'stopping',
     };
     this.mediaStates.set(meetingId, state);
+    void this.persistRuntimeState(meetingId);
     moderator.emit('media-command', { meetingId, ...command });
     return true;
   }
 
-  getMediaState(meetingId: string, mode: MediaMode) {
+  async getMediaState(meetingId: string, mode: MediaMode) {
+    await this.restoreRuntimeState(meetingId);
     return this.mediaStates.get(meetingId)?.[mode] ?? { status: 'idle' as MediaStatus };
+  }
+
+  private socketIdentity(client: Socket) {
+    const user = client.data.user;
+    return user?.sub ? `${user.type ?? 'user'}:${user.sub}` : `socket:${client.id}`;
+  }
+
+  private async restoreRuntimeState(meetingId: string) {
+    if (
+      this.activeSpiritualEvents.has(meetingId) ||
+      this.activePolls.has(meetingId) ||
+      this.mediaStates.has(meetingId)
+    ) return;
+
+    const state = await this.runtimeRepo.findOne({ where: { meetingId } });
+    if (!state) return;
+    if (state.spiritualEvent) {
+      this.activeSpiritualEvents.set(meetingId, state.spiritualEvent as SpiritualEvent);
+    }
+    if (state.activePoll) {
+      this.activePolls.set(meetingId, {
+        poll: state.activePoll as unknown as PollEvent,
+        votes: new Map(Object.entries(state.pollVotes ?? {}).map(
+          ([identity, option]) => [identity, Number(option)],
+        )),
+      });
+    }
+    if (state.mediaState) {
+      this.mediaStates.set(meetingId, state.mediaState as any);
+    }
+  }
+
+  private async persistRuntimeState(meetingId: string) {
+    const activePoll = this.activePolls.get(meetingId);
+    await this.runtimeRepo.save({
+      meetingId,
+      spiritualEvent: this.activeSpiritualEvents.get(meetingId) ?? null,
+      activePoll: activePoll?.poll ?? null,
+      pollVotes: activePoll ? Object.fromEntries(activePoll.votes) : {},
+      mediaState: this.mediaStates.get(meetingId) ?? {},
+    });
   }
 
   private extractToken(client: Socket): string | null {
@@ -441,9 +504,14 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return null;
   }
 
-  private normalizeSpiritualBackground(backgroundId?: string) {
-    const allowed = ['ocean', 'dawn', 'midnight', 'forest', 'parchment', 'royal'];
-    return allowed.includes(backgroundId ?? '') ? backgroundId : 'ocean';
+  private async normalizeSpiritualBackground(backgroundId?: string) {
+    const slug = backgroundId?.trim().toLowerCase();
+    if (!slug || !/^[a-z0-9-]{1,80}$/.test(slug)) return 'ocean';
+    const background = await this.backgroundRepo.findOne({
+      where: { slug, isActive: true },
+      select: ['slug'],
+    });
+    return background?.slug ?? 'ocean';
   }
 
   private async requireAdmin(client: Socket): Promise<void> {
@@ -457,19 +525,35 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
     }
 
     const role = user?.role;
-    const joinedMeeting = client.data.user?.meetingModeratorFor;
     if (
       role !== 'admin' &&
       role !== 'super_admin' &&
-      !(role === 'meeting_moderator' && joinedMeeting && client.rooms.has(joinedMeeting))
+      role !== 'meeting_moderator'
     ) {
       throw new WsException('Action réservée aux modérateurs.');
     }
   }
 
   private requireJoined(client: Socket, meetingId: string): void {
+    this.requireMeetingScope(client, meetingId);
     if (!meetingId || !client.rooms.has(meetingId)) {
       throw new WsException('Vous devez rejoindre la réunion avant cette action.');
+    }
+  }
+
+  private requireMeetingScope(client: Socket, meetingId: string): void {
+    const user = client.data.user;
+    if (
+      (
+        user?.role === 'meeting_moderator' &&
+        user.meetingModeratorFor !== meetingId
+      ) ||
+      (
+        user?.meetingAccessFor &&
+        user.meetingAccessFor !== meetingId
+      )
+    ) {
+      throw new WsException('Ce lien est limité à une autre réunion.');
     }
   }
 

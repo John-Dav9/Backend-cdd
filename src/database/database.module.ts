@@ -29,6 +29,11 @@ import { MeetingInvite } from './entities/meeting-invite.entity';
 import { Cantique } from './entities/cantique.entity';
 import { AddCantiques1781136000000 } from './migrations/1781136000000-AddCantiques';
 import { AddParticipantAuthSubject1781222400000 } from './migrations/1781222400000-AddParticipantAuthSubject';
+import { MeetingRuntimeState } from './entities/meeting-runtime-state.entity';
+import { SpiritualBackground } from './entities/spiritual-background.entity';
+import { AddMeetingRuntimeAndBackgrounds1781308800000 } from './migrations/1781308800000-AddMeetingRuntimeAndBackgrounds';
+import { MeetingAccessLink } from './entities/meeting-access-link.entity';
+import { AddMeetingAccessLinks1781395200000 } from './migrations/1781395200000-AddMeetingAccessLinks';
 
 @Module({
   imports: [
@@ -51,12 +56,17 @@ import { AddParticipantAuthSubject1781222400000 } from './migrations/17812224000
           MentorshipRequest,
           MeetingInvite,
           Cantique,
+          MeetingRuntimeState,
+          SpiritualBackground,
+          MeetingAccessLink,
         ],
         synchronize: config.get<string>('DB_SYNCHRONIZE', 'false') === 'true',
         migrations: [
           BaselineSchema1717977600000,
           AddCantiques1781136000000,
           AddParticipantAuthSubject1781222400000,
+          AddMeetingRuntimeAndBackgrounds1781308800000,
+          AddMeetingAccessLinks1781395200000,
         ],
         migrationsRun: true,
         logging: config.get('NODE_ENV') !== 'production',

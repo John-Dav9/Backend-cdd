@@ -40,7 +40,9 @@ export class JwtAuthGuard implements CanActivate {
       if (await this.revokedTokens.isRevoked(payload.jti)) {
         throw new UnauthorizedException('Session révoquée');
       }
-      if (payload.type === 'member' && payload.role !== 'meeting_moderator') {
+      if (payload.type === 'visitor' && payload.role === 'visitor') {
+        payload.name = String(payload.name ?? 'Visiteur').slice(0, 100);
+      } else if (payload.type === 'member' && payload.role !== 'meeting_moderator') {
         const member = await this.memberRepo.findOne({ where: { id: payload.sub } });
         if (!member?.isActive) {
           throw new UnauthorizedException('Compte membre inactif');

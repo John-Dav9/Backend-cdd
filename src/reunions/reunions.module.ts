@@ -14,10 +14,20 @@ import { StatsController } from './reunions.stats';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MeetingInvite } from '../database/entities/meeting-invite.entity';
 import { User } from '../database/entities/user.entity';
+import { MeetingRuntimeState } from '../database/entities/meeting-runtime-state.entity';
+import { SpiritualBackground } from '../database/entities/spiritual-background.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Meeting, MeetingParticipant, MeetingInvite, Member, User]),
+    TypeOrmModule.forFeature([
+      Meeting,
+      MeetingParticipant,
+      MeetingInvite,
+      MeetingRuntimeState,
+      SpiritualBackground,
+      Member,
+      User,
+    ]),
     MailModule,
     AuthModule,
     NotificationsModule,

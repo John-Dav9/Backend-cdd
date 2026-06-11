@@ -9,7 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { randomInt, randomUUID } from 'crypto';
 import { IsNull, MoreThan, Repository } from 'typeorm';
 import { OtpCode } from '../database/entities/otp-code.entity';

@@ -35,6 +35,14 @@ export class CantiquesController {
     return this.service.create(dto);
   }
 
+  @Post('import')
+  @AdminOnly()
+  importMany(
+    @Body() body: { items: SaveCantiqueDto[]; rightsConfirmation: string },
+  ) {
+    return this.service.importMany(body.items, body.rightsConfirmation);
+  }
+
   @Put(':id')
   @AdminOnly()
   update(@Param('id') id: string, @Body() dto: SaveCantiqueDto) {

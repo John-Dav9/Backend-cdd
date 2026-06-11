@@ -1,4 +1,4 @@
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 jest.mock('../mail/mail.service', () => ({
   MailService: class MailService {},
