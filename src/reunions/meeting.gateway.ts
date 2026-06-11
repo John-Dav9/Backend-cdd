@@ -559,7 +559,7 @@ export class MeetingGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   private findModeratorSocket(meetingId: string): Socket | undefined {
     for (const socketId of this.rooms.get(meetingId) ?? []) {
-      const socket = this.server.sockets.get(socketId);
+      const socket = (this.server as any).sockets.get(socketId) as Socket | undefined;
       const role = socket?.data.user?.role;
       if (
         socket &&
