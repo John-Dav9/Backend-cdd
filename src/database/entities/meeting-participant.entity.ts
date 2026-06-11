@@ -23,6 +23,9 @@ export class MeetingParticipant {
   @Column({ name: 'member_id', nullable: true })
   memberId: string;
 
+  @Column({ name: 'auth_subject', nullable: true })
+  authSubject: string;
+
   @Column({ name: 'display_name' })
   displayName: string;
 

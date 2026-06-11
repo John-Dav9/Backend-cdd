@@ -200,10 +200,39 @@ export class ReunionsService {
       || jwtUser?.meetingModeratorFor === id;
     const displayName = dto.displayName || `${member.firstName} ${member.lastName}`.trim();
     const realMemberId = persistedMember ? userId : null;
+    const authSubject = persistedMember ? null : userId;
     const requiresAdmission = meeting.lobbyEnabled && !isModerator;
-    const existing = realMemberId ? await this.participantRepo.findOne({
-      where: { meetingId: id, memberId: realMemberId },
-    }) : null;
+    let existing = realMemberId
+      ? await this.participantRepo.findOne({
+        where: { meetingId: id, memberId: realMemberId },
+      })
+      : await this.participantRepo.findOne({
+        where: { meetingId: id, authSubject },
+      });
+
+    if (!existing && authSubject && isModerator) {
+      const legacyRows = await this.participantRepo.find({
+        where: {
+          meetingId: id,
+          memberId: IsNull(),
+          displayName,
+          wasAdmin: true,
+          leftAt: IsNull(),
+        },
+        order: { lastSeenAt: 'DESC', joinedAt: 'DESC' },
+      });
+      existing = legacyRows[0] ?? null;
+      if (existing) {
+        existing.authSubject = authSubject;
+        const duplicateRows = legacyRows.slice(1);
+        if (duplicateRows.length > 0) {
+          const disconnectedAt = new Date();
+          await this.participantRepo.save(
+            duplicateRows.map(row => ({ ...row, leftAt: disconnectedAt })),
+          );
+        }
+      }
+    }
 
     let participant: MeetingParticipant;
     if (existing) {
@@ -219,6 +248,7 @@ export class ReunionsService {
       participant = await this.participantRepo.save({
         meetingId: id,
         ...(realMemberId ? { memberId: realMemberId } : {}),
+        ...(authSubject ? { authSubject } : {}),
         displayName,
         wasAdmin: isModerator,
         admissionStatus: requiresAdmission ? 'pending' : 'admitted',
@@ -565,10 +595,12 @@ export class ReunionsService {
   }
 
   async getParticipants(id: string) {
-    return this.participantRepo.find({
+    const participants = await this.participantRepo.find({
       where: { meetingId: id, leftAt: IsNull(), admissionStatus: 'admitted' },
       relations: ['member'],
+      order: { lastSeenAt: 'DESC', joinedAt: 'DESC' },
     });
+    return this.distinctParticipants(participants);
   }
 
   async getAttendance(id: string) {
@@ -655,11 +687,31 @@ export class ReunionsService {
   }
 
   private async syncParticipantCount(meetingId: string) {
-    const participantCount = await this.participantRepo.count({
+    const participants = await this.participantRepo.find({
       where: { meetingId, leftAt: IsNull(), admissionStatus: 'admitted' },
     });
+    const participantCount = this.distinctParticipants(participants).length;
     await this.meetingRepo.update(meetingId, { participantCount });
     return participantCount;
+  }
+
+  private distinctParticipants(participants: MeetingParticipant[]) {
+    const identities = new Set<string>();
+    return participants.filter(participant => {
+      const identity = participant.memberId
+        ? `member:${participant.memberId}`
+        : participant.authSubject
+          ? `auth:${participant.authSubject}`
+          : participant.wasAdmin
+            ? `legacy-admin:${participant.displayName.trim().toLocaleLowerCase('fr')}`
+            : participant.jitsiParticipantId
+              ? `jitsi:${participant.jitsiParticipantId}`
+              : `participant:${participant.id}`;
+
+      if (identities.has(identity)) return false;
+      identities.add(identity);
+      return true;
+    });
   }
 
   async generateRecurringOccurrences() {

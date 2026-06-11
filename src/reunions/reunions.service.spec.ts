@@ -35,9 +35,12 @@ describe('ReunionsService waiting room', () => {
       findOne: jest.fn().mockImplementation(async ({ where }: any) => {
         if (!participant) return null;
         if (where.id && where.id !== participant.id) return null;
+        if (where.memberId && where.memberId !== participant.memberId) return null;
+        if (where.authSubject && where.authSubject !== participant.authSubject) return null;
         if (where.admissionStatus && where.admissionStatus !== participant.admissionStatus) return null;
         return Object.assign(participant, { member });
       }),
+      find: jest.fn().mockImplementation(async () => participant ? [participant] : []),
       save: jest.fn().mockImplementation(async (value: any) => {
         participant = Object.assign(participant ?? { id: 'participant-id' }, value);
         return participant;
@@ -137,6 +140,7 @@ describe('ReunionsService waiting room', () => {
     expect(admitted.displayName).toBe('Administrateur principal');
     expect(admitted.email).toBe('admin@cmciea-france.com');
     expect(admitted.role).toBe('super_admin');
+    expect(participant.authSubject).toBe('admin-id');
     expect(jitsiService.generateToken).toHaveBeenCalledWith(
       meeting.jitsiRoomId,
       expect.objectContaining({
@@ -147,5 +151,20 @@ describe('ReunionsService waiting room', () => {
       }),
       true,
     );
+  });
+
+  it('reuses the same participation when the primary administrator reconnects', async () => {
+    const jwtUser = {
+      sub: 'admin-id',
+      email: 'admin@cmciea-france.com',
+      name: 'Administrateur principal',
+      role: 'super_admin',
+    };
+
+    const first: any = await service.join(meeting.id, 'admin-id', {}, jwtUser);
+    const second: any = await service.join(meeting.id, 'admin-id', {}, jwtUser);
+
+    expect(second.participantId).toBe(first.participantId);
+    expect(participant.authSubject).toBe('admin-id');
   });
 });

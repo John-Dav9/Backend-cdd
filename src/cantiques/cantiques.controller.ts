@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Public } from '../auth/public.decorator';
 import { AdminOnly, MeetingAdminOnly } from '../auth/roles.decorator';
 import { CantiquesService } from './cantiques.service';
 import { SaveCantiqueDto } from './dto/cantique.dto';
@@ -6,6 +7,12 @@ import { SaveCantiqueDto } from './dto/cantique.dto';
 @Controller('cantiques')
 export class CantiquesController {
   constructor(private readonly service: CantiquesService) {}
+
+  @Public()
+  @Get('public')
+  searchPublic(@Query('q') query?: string) {
+    return this.service.search(query);
+  }
 
   @Get()
   @AdminOnly()
