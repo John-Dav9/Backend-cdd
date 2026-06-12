@@ -176,6 +176,14 @@ Format : liste numérotée de 5 points (1 à 2 phrases chacun).`;
     return { imported: true, recordingId: saved.id, file: basename(localPath) };
   }
 
+  async getDownloadStream(id: string) {
+    const recording = await this.findOne(id);
+    if (!recording.storagePath) throw new NotFoundException('Aucun fichier associé à cet enregistrement');
+    const stream = await this.storage.getPrivateStream(recording.storagePath);
+    const filename = basename(recording.storagePath);
+    return { stream, filename };
+  }
+
   private async withAccessUrl(recording: Recording): Promise<any> {
     if (!recording.storagePath) return recording;
     return {

@@ -10,6 +10,7 @@ export class StorageService implements OnModuleInit {
   private privateBucket: string;
   private readonly logger = new Logger(StorageService.name);
   private publicBaseUrl: string;
+  private publicMinioUrl: string;
 
   constructor(private config: ConfigService) {
     this.bucket = this.config.get<string>('MINIO_BUCKET', 'cmciea');
@@ -28,6 +29,7 @@ export class StorageService implements OnModuleInit {
 
     const protocol = useSSL ? 'https' : 'http';
     this.publicBaseUrl = `${protocol}://${endpoint}:${port}/${this.bucket}`;
+    this.publicMinioUrl = this.config.get<string>('MINIO_PUBLIC_URL', '');
   }
 
   async onModuleInit() {
@@ -79,8 +81,12 @@ export class StorageService implements OnModuleInit {
     );
   }
 
-  getPrivateUrl(path: string, expiresSeconds = 3600) {
+  async getPrivateUrl(path: string, expiresSeconds = 3600): Promise<string> {
     return this.client.presignedGetObject(this.privateBucket, path, expiresSeconds);
+  }
+
+  getPrivateStream(path: string): Promise<NodeJS.ReadableStream> {
+    return this.client.getObject(this.privateBucket, path);
   }
 
   getUrl(path: string): string {

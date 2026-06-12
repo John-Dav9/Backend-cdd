@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
-import { Request } from 'express';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { AdminOnly, Roles } from '../auth/roles.decorator';
 import { CreateRecordingDto } from './dto/create-recording.dto';
 import { ReplaysService } from './replays.service';
@@ -42,6 +42,15 @@ export class ReplaysController {
       throw new UnauthorizedException('Signature Jibri invalide');
     }
     return this.service.finalizeJibri(body.recordingPath, body.roomId);
+  }
+
+  @Get(':id/download')
+  @AdminOnly()
+  async download(@Param('id') id: string, @Res() res: Response) {
+    const { stream, filename } = await this.service.getDownloadStream(id);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'video/mp4');
+    (stream as any).pipe(res);
   }
 
   @Patch(':id')
