@@ -11,11 +11,11 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 164.68.110.52
-          username: john_david
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /home/john_david/cmciea
+            cd /home/${{ secrets.VPS_USER }}/cmciea
             git -C backend pull origin main
             docker compose up -d --build backend
             docker image prune -f
